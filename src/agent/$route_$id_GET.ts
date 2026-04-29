@@ -15,9 +15,13 @@ export default async function (ctx: Context, _session: any, req: any) {
 <header class="px-6 py-3 border-b border-gray-200 flex items-center gap-3 text-sm">
   <span class="font-semibold text-gray-700">${esc(id)}</span>
   <span class="text-xs text-gray-400 font-mono">${esc(agent.model)}</span>
+  <span id="context-usage" class="text-xs text-gray-500 font-mono">ctx: —</span>
   <div class="ml-auto flex gap-2">
     <form method="POST" action="/agent/${encodeURIComponent(id)}/stop" class="inline">
       <button class="text-xs px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50">stop</button>
+    </form>
+    <form method="POST" action="/agent/${encodeURIComponent(id)}/archive" class="inline">
+      <button class="text-xs px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50">archive</button>
     </form>
     <form method="POST" action="/agent/${encodeURIComponent(id)}/delete" class="inline" onsubmit="return confirm('delete this agent?')">
       <button class="text-xs px-2 py-0.5 rounded border border-gray-300 hover:bg-gray-50">delete</button>
