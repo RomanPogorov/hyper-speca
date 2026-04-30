@@ -1,17 +1,35 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test, mock } from "bun:test";
 import layout from "./$layout";
 
-const mkCtx = () => ({
-  state: { agent: {} },
-  env: {},
-  fns: { session: { list: () => [{ id: 'a1', model: 'm', title: 't', turns: 1, isStreaming: false }] }, files: { listOpen: () => [] } },
-} as unknown as Context);
+describe("layout sidebar refresh", () => {
+    test("returns sidebar fragment for arbitrary current route when x-hyper-fragment=sidebar", () => {
+        const list = mock(() => [{
+            id: "agent_x",
+            model: "codex:gpt-5.4",
+            title: "(empty)",
+            turns: 0,
+            createdAt: 1,
+            updatedAt: 1,
+        }]);
 
-describe("$layout sidebar fragment", () => {
-  test("returns only aside for sidebar fragment requests", () => {
-    const req = new Request('http://x/', { headers: { 'x-hyper-fragment': 'sidebar' } });
-    const html = layout(mkCtx(), { main: 'x' }, req) as string;
-    expect(html.trim().startsWith('<aside')).toBe(true);
-    expect(html).not.toContain('<html');
-  });
+        const ctx = {
+            state: { agent: { agent_x: { id: "agent_x", isStreaming: false } } },
+            fns: {
+                session: { list },
+                files: { listOpen: () => [] },
+            },
+        } as unknown as Context;
+
+        const req = new Request("http://localhost/agent/new", {
+            headers: { "x-hyper-fragment": "sidebar" },
+        });
+
+        const html = layout(ctx, {
+            title: "new agent",
+            main: "<div>body</div>",
+        }, req) as string;
+
+        expect(html).toContain("<aside");
+        expect(html).toContain("agent_x");
+    });
 });
