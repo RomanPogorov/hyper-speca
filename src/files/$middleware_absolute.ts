@@ -31,6 +31,8 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
         target.searchParams.set("path", absolute);
         const tab = url.searchParams.get("tab");
         if (tab) target.searchParams.set("tab", tab);
+        if (url.searchParams.get("embed") === "1") target.searchParams.set("embed", "1");
+        if (url.searchParams.get("wide") === "1") target.searchParams.set("wide", "1");
         const headers: Record<string, string> = {};
         for (const name of ["accept", "hx-request", "x-hyper-fragment"]) {
             const value = opts.req.headers.get(name);
