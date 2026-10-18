@@ -75,11 +75,15 @@
             const method = elt.getAttribute('hx-popup');
             const title = elt.getAttribute('title') || elt.getAttribute('aria-label') || method;
             const secureSubmit = method === 'secureInput.submit';
+            // Asking whether a secret prompt is pending is a background check: most of the time the answer
+            // is empty, so it must not flash an empty loading dialog. The popup opens only when the answer
+            // carries a [data-secure-input] form (htmx:after:swap in popup.js).
+            const quiet = secureSubmit || elt.id === 'secure-input-host';
             // Snapshot everything htmx needs BEFORE loading() removes the source
             // form from the DOM. htmx source may be the detached element, but
             // values are already complete and target is explicit.
             const values = { method, params: JSON.stringify(params) };
-            if (!secureSubmit) window.hyperPopup?.loading(title, 'rpc');
+            if (!quiet) window.hyperPopup?.loading(title, 'rpc');
             htmx.ajax('POST', '/rpc', { target: '#app-popup-body', swap: 'innerHTML', values, headers: window.hyperRpcCsrfHeaders() });
         }
     };
