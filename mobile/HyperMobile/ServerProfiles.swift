@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AuthenticationServices
 
 struct ServerProfile: Codable, Identifiable, Hashable {
     let id: String
@@ -265,6 +266,11 @@ struct ServerSwitcherMenu: View {
     @EnvironmentObject private var sessions: MultiServerSessionCoordinator
     @StateObject private var discovery = HyperMeshDiscovery.shared
     @State private var isPresented = false
+    @State private var signingInProfile: ServerProfile?
+    @State private var loginPassword = ""
+    @State private var loginError: String?
+    @State private var loggingIn = false
+    @State private var sso = MobileSSO()
     let manage: () -> Void
 
     private var sortedProfiles: [ServerProfile] {
@@ -302,6 +308,16 @@ struct ServerSwitcherMenu: View {
                                         }
                                         Spacer(minLength: 12)
                                         if profile.id == servers.selectedID { Image(systemName: "checkmark").foregroundStyle(.blue).fontWeight(.semibold) }
+                                        if servers.auth(for: profile.id).status == .signInRequired {
+                                            Button("Sign in") {
+                                                isPresented = false
+                                                Task { @MainActor in
+                                                    try? await Task.sleep(for: .milliseconds(300))
+                                                    signingInProfile = profile
+                                                }
+                                            }
+                                            .buttonStyle(.bordered)
+                                        }
                                     }
                                     .contentShape(Rectangle())
                                     .padding(.horizontal, 16)
@@ -332,6 +348,31 @@ struct ServerSwitcherMenu: View {
             }
             .frame(minWidth: 320, idealWidth: 360, minHeight: 320, idealHeight: 520, maxHeight: 620)
             .presentationCompactAdaptation(.popover)
+        }
+        .sheet(item: $signingInProfile) { profile in
+            NativeLoginView(password: $loginPassword, error: loginError, isLoading: loggingIn, sso: { signInWithSSO(profile) }) { login(profile) }
+        }
+    }
+
+
+    private func login(_ profile: ServerProfile) {
+        guard let baseURL = profile.baseURL, !loginPassword.isEmpty else { return }
+        loggingIn = true; loginError = nil
+        Task {
+            do { try await APIClient(baseURL: baseURL).login(password: loginPassword); signingInProfile = nil; sessions.resume(profile: profile, serverStore: servers) }
+            catch { loginError = error.localizedDescription }
+            loggingIn = false
+        }
+    }
+
+    private func signInWithSSO(_ profile: ServerProfile) {
+        guard let baseURL = profile.baseURL else { return }
+        loggingIn = true; loginError = nil
+        Task {
+            do { try await sso.signIn(baseURL: baseURL); signingInProfile = nil; sessions.resume(profile: profile, serverStore: servers) }
+            catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { }
+            catch { loginError = error.localizedDescription }
+            loggingIn = false
         }
     }
 

@@ -1,6 +1,6 @@
 /** Lists active Hyper agents for the native mobile client. */
 export default async function (ctx: Context, _session: Session | null, _opts: { req: Request; params: Record<string, string> }) {
-    const agents = await ctx.fns.session.list({});
+    const agents = await ctx.fns.nav.agents({ limit: 50 });
     const [pins, mentions, projects] = await Promise.all([
         ctx.fns.auth.pinnedIds({}),
         ctx.fns.mentions.unreadByAgent({}),
@@ -20,10 +20,10 @@ export default async function (ctx: Context, _session: Session | null, _opts: { 
             title: agent.title,
             model: agent.model,
             runState: agent.runState,
-            unread: agent.unread,
+            unread: agent.hasUnread ? 1 : 0,
             mentions: Number(mentions[agent.id] ?? 0),
-            turns: agent.turns,
-            updatedAt: agent.updatedAt,
+            turns: agent.turns ?? 0,
+            updatedAt: agent.lastMessageAt ?? 0,
             workspaceDir: agent.workspaceDir,
             projectId: projectIdByAgent.get(agent.id) ?? null,
             projectTitle: projectIdByAgent.get(agent.id) ? projectById.get(projectIdByAgent.get(agent.id)!)?.title ?? null : null,
