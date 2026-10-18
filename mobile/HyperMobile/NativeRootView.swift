@@ -24,12 +24,14 @@ struct NativeRootView: View {
     @State private var pendingDelete: AgentSummary?
     private var baseURL: URL? { servers.selectedURL }
     private var selectedWorkspace: ServerWorkspaceSnapshot { sessions.workspace(for: servers.selectedID) }
-    private var folders: [String] { Array(Set(selectedWorkspace.agents.map { folderName($0.workspaceDir) })).sorted() }
+    private var projects: [(id: String, title: String)] {
+        selectedWorkspace.projects.map { ($0.id, $0.title) } + [("", "Misc")]
+    }
     private var filtered: [AgentSummary] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return selectedWorkspace.agents.filter {
             (q.isEmpty || $0.title.lowercased().contains(q) || $0.id.lowercased().contains(q) || $0.workspaceDir.lowercased().contains(q)) &&
-            (selectedFolder == nil || folderName($0.workspaceDir) == selectedFolder)
+            (selectedFolder == nil || ($0.projectId ?? "") == selectedFolder)
         }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             if ($0.unread > 0) != ($1.unread > 0) { return $0.unread > 0 }
@@ -49,9 +51,9 @@ struct NativeRootView: View {
                 } else {
                     VStack(spacing: 0) {
                         List {
-                            agentSection("Pinned", filtered.filter(\.pinned))
-                            agentSection("Unread", filtered.filter { !$0.pinned && $0.unread > 0 })
-                            agentSection("Recent", filtered.filter { !$0.pinned && $0.unread == 0 })
+                            ForEach(projects, id: \.id) { project in
+                                agentSection(project.title, filtered.filter { ($0.projectId ?? "") == project.id })
+                            }
                         }
                         .listStyle(.plain)
                         .scrollContentBackground(.hidden)
@@ -67,12 +69,12 @@ struct NativeRootView: View {
                     Menu {
                         Button { selectedFolder = nil } label: { if selectedFolder == nil { Label("All chats", systemImage: "checkmark") } else { Text("All chats") } }
                         Divider()
-                        ForEach(folders, id: \.self) { folder in
-                            Button { selectedFolder = folder } label: { if selectedFolder == folder { Label(folder, systemImage: "checkmark") } else { Text(folder) } }
+                        ForEach(projects, id: \.id) { project in
+                            Button { selectedFolder = project.id } label: { if selectedFolder == project.id { Label(project.title, systemImage: "checkmark") } else { Text(project.title) } }
                         }
                     } label: {
                         HStack(spacing: 5) {
-                            Text(selectedFolder ?? "All chats").font(.headline).lineLimit(1)
+                            Text(selectedFolder.flatMap { id in projects.first { $0.id == id }?.title } ?? "All chats").font(.headline).lineLimit(1)
                             Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
                         }
                     }
@@ -97,7 +99,7 @@ struct NativeRootView: View {
                     .accessibilityLabel("More")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showingNewAgent = true } label: { Image(systemName: "square.and.pencil") }
+                    Button { selectedFolder = ""; showingNewAgent = true } label: { Image(systemName: "square.and.pencil") }
                         .accessibilityLabel("New chat")
                 }
             }
@@ -121,7 +123,7 @@ struct NativeRootView: View {
         .navigationDestination(item: $createdAgentToOpen) { agent in
             if let baseURL { NativeChatView(agent: agent, baseURL: baseURL, profileID: servers.selectedID, onRead: { Task { await refreshSelected() } }, onNextUnread: { openNextUnread(after: agent.id) }).id(agent.id) }
         }
-        .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL) { created in showingNewAgent = false; openCreatedAgent(created) } } }
+        .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL, initialProjectID: selectedFolder ?? "") { created in showingNewAgent = false; openCreatedAgent(created) } } }
         .sheet(isPresented: $showingHealth) { if let healthURL = servers.trustedHealthURL { HealthSyncView(baseURL: healthURL, serverName: servers.trustedHealthProfile.name) } }
         .sheet(isPresented: $showingSettings) { ServerProfilesView() }
         .sheet(isPresented: $showingServers) { ServerProfilesView() }
@@ -142,29 +144,26 @@ struct NativeRootView: View {
 
     @ViewBuilder private func agentSection(_ title: String, _ agents: [AgentSummary]) -> some View {
         if !agents.isEmpty {
-            Text(title).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-                .padding(.top, 6).padding(.bottom, 1)
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-            ForEach(agents) { agent in
+            Section(title) {
+                ForEach(agents) { agent in
                     ZStack {
                         AgentRow(agent: agent)
                         NavigationLink(value: agent) { EmptyView() }.opacity(0)
                     }
-                        .listRowSeparator(.visible)
-                        .listRowSeparatorTint(Color.primary.opacity(0.12))
-                        .alignmentGuide(.listRowSeparatorLeading) { _ in 50 }
-                        .listRowInsets(EdgeInsets(top: 1, leading: 16, bottom: 1, trailing: 16))
-                        .listRowSpacing(0)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { pendingDelete = agent } label: { Label("Delete", systemImage: "trash") }
-                            Button { archive(agent) } label: { Label("Archive", systemImage: "archivebox") }.tint(.orange)
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") }.tint(.orange)
-                        }
+                    .listRowSeparator(.visible)
+                    .listRowSeparatorTint(Color.primary.opacity(0.12))
+                    .alignmentGuide(.listRowSeparatorLeading) { _ in 50 }
+                    .listRowInsets(EdgeInsets(top: 1, leading: 16, bottom: 1, trailing: 16))
+                    .listRowSpacing(0)
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { pendingDelete = agent } label: { Label("Delete", systemImage: "trash") }
+                        Button { archive(agent) } label: { Label("Archive", systemImage: "archivebox") }.tint(.orange)
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") }.tint(.orange)
+                    }
                     .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") } }
+                }
             }
         }
     }
@@ -200,19 +199,18 @@ struct NativeRootView: View {
     }
     private func signInWithSSO() { guard let baseURL else { return }; isLoggingIn = true; loginError = nil; Task { do { try await sso.signIn(baseURL: baseURL); needsLogin = false; await refreshSelected() } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { } catch { loginError = error.localizedDescription }; isLoggingIn = false } }
     private func logout() { guard let baseURL else { return }; let profileID = servers.selectedID; Task { do { try await APIClient(baseURL: baseURL).logout(); ServerSessionPool.shared.clear(baseURL: baseURL); servers.markSignedOut(profileID); sessions.remove(profileID: profileID); sessions.activate(profiles: servers.profiles, serverStore: servers); store.stopRefreshing(); store.agents = []; authUser = nil; loginPassword = ""; loginError = nil; needsLogin = true } catch { loginError = error.localizedDescription } } }
-    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); selectedFolder = cached.selectedFolder; query = cached.query; createdAgentToOpen = cached.selectedAgentID.flatMap { id in sessions.workspace(for: servers.selectedID).agents.first { $0.id == id } }; loginPassword = ""; loginError = nil; let snapshot = sessions.workspace(for: servers.selectedID); store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = servers.auth(for: servers.selectedID).status == .signInRequired; Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
+    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); selectedFolder = cached.selectedFolder.flatMap { id in id.isEmpty || snapshot.projects.contains(where: { $0.id == id }) ? id : nil }; query = cached.query; createdAgentToOpen = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = servers.auth(for: servers.selectedID).status == .signInRequired; Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
     private func authUserFromSnapshot() -> APIClient.AuthUser? { let auth = servers.auth(for: servers.selectedID); guard auth.status == .authenticated else { return nil }; return APIClient.AuthUser(id: auth.userID, name: auth.userName ?? "Signed in", email: auth.userEmail, role: auth.role ?? "user") }
     private func pin(_ agent: AgentSummary, _ pinned: Bool) { guard let baseURL else { return }; Task { await store.setPinned(agent, pinned: pinned, baseURL: baseURL); await refreshSelected() } }
     private func archive(_ agent: AgentSummary) { guard let baseURL else { return }; Task { do { _ = try await APIClient(baseURL: baseURL).archiveAgent(agentID: agent.id); await refreshSelected() } catch { store.error = error.localizedDescription } } }
     private func delete(_ agent: AgentSummary) { guard let baseURL else { return }; Task { do { _ = try await APIClient(baseURL: baseURL).deleteAgent(agentID: agent.id); await refreshSelected() } catch { store.error = error.localizedDescription } } }
-    private func folderName(_ path: String) -> String { URL(fileURLWithPath: path).lastPathComponent.isEmpty ? "No workspace" : URL(fileURLWithPath: path).lastPathComponent }
 }
 
 struct AgentRow: View {
     let agent: AgentSummary
     private var folder: String { URL(fileURLWithPath: agent.workspaceDir).lastPathComponent.isEmpty ? "No workspace" : URL(fileURLWithPath: agent.workspaceDir).lastPathComponent }
-    private var projectColor: Color { ProjectColor.color(for: agent.workspaceDir) }
-    private var initial: String { String((folder == "No workspace" ? agent.title : folder).prefix(1)).uppercased() }
+    private var projectColor: Color { ProjectColor.color(for: agent.projectId ?? agent.workspaceDir) }
+    private var initial: String { String((agent.projectTitle ?? (folder == "No workspace" ? agent.title : folder)).prefix(1)).uppercased() }
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -239,7 +237,7 @@ struct AgentRow: View {
                     Spacer(minLength: 4)
                     if agent.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
                 }
-                Text(folder).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(agent.projectTitle ?? folder).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
         }.environment(\.defaultMinListRowHeight, 48)
     }

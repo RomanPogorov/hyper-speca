@@ -2,11 +2,20 @@ import SwiftUI
 
 struct NewAgentView: View {
     let baseURL: URL
+    let initialProjectID: String
     let created: (CreatedAgent) -> Void
+
+    init(baseURL: URL, initialProjectID: String = "", created: @escaping (CreatedAgent) -> Void) {
+        self.baseURL = baseURL
+        self.initialProjectID = initialProjectID
+        self.created = created
+        _projectID = State(initialValue: initialProjectID)
+    }
     @Environment(\.dismiss) private var dismiss
     @State private var options: NewAgentOptions?
     @State private var title = ""
     @State private var workspace = ""
+    @State private var projectID = ""
     @State private var model = ""
     @State private var systemPrompt = ""
     @State private var provider = ""
@@ -15,6 +24,7 @@ struct NewAgentView: View {
     @State private var showingWorkspacePicker = false
     @State private var showingProviderPicker = false
     @State private var showingModelPicker = false
+    @State private var showingProjectCreator = false
 
     var body: some View {
         NavigationStack {
@@ -30,18 +40,34 @@ struct NewAgentView: View {
                     }
                     .disabled(provider.isEmpty || modelsForProvider.isEmpty)
                 }
-                Section("Workspace") {
-                    Button { showingWorkspacePicker = true } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Folder").font(.caption).foregroundStyle(.secondary)
-                                Text(workspaceLabel).foregroundStyle(.primary).lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-                        }.contentShape(Rectangle())
+                Section("Project") {
+                    Picker("Project", selection: $projectID) {
+                        Text("Misc").tag("")
+                        ForEach(options?.projects ?? []) { project in
+                            Text(project.title).tag(project.id)
+                        }
                     }
-                    TextField("Or enter full path", text: $workspace).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button { showingProjectCreator = true } label: { Label("New project", systemImage: "folder.badge.plus") }
+                }
+
+                Section("Workspace") {
+                    if let project = selectedProject {
+                        LabeledContent("Inherited from", value: project.defaultDir ?? "Project workspace")
+                            .foregroundStyle(.secondary)
+                        TextField("Override with full path (optional)", text: $workspace).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    } else {
+                        Button { showingWorkspacePicker = true } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Folder").font(.caption).foregroundStyle(.secondary)
+                                    Text(workspaceLabel).foregroundStyle(.primary).lineLimit(1)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+                            }.contentShape(Rectangle())
+                        }
+                        TextField("Or enter full path", text: $workspace).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
                 }
                 Section("Instructions") {
                     TextField("Optional system instructions", text: $systemPrompt, axis: .vertical).lineLimit(3...8)
@@ -67,12 +93,26 @@ struct NewAgentView: View {
         .sheet(isPresented: $showingModelPicker) {
             ScrollableChoicePicker(title: "Choose model", choices: modelsForProvider.map(\.model), selection: $model, label: modelLabel)
         }
+        .sheet(isPresented: $showingProjectCreator) {
+            NewProjectView(baseURL: baseURL) { project in
+                if var value = options {
+                    var projects = value.projects ?? []
+                    projects.append(project)
+                    projects.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+                    options = NewAgentOptions(version: value.version, defaultModel: value.defaultModel, models: value.models, workspaces: value.workspaces, projects: projects)
+                }
+                projectID = project.id
+                workspace = ""
+                showingProjectCreator = false
+            }
+        }
         .task { await loadOptions() }
         .onChange(of: provider) { _, newProvider in
             if !modelsForProvider.contains(where: { $0.model == model }) {
                 model = (options?.models.first { $0.provider == newProvider })?.model ?? ""
             }
         }
+        .onChange(of: projectID) { _, _ in workspace = "" }
     }
 
     private func selectionRow(title: String, value: String) -> some View {
@@ -84,6 +124,9 @@ struct NewAgentView: View {
         }
         .contentShape(Rectangle())
     }
+
+
+    private var selectedProject: MobileProject? { options?.projects?.first { $0.id == projectID } }
 
 
     private var workspaceLabel: String {
@@ -112,7 +155,8 @@ struct NewAgentView: View {
             let defaultItem = value.models.first { $0.model == value.defaultModel } ?? value.models.first
             provider = defaultItem?.provider ?? ""
             model = defaultItem?.model ?? ""
-            workspace = value.workspaces.first ?? ""
+            projectID = value.projects?.contains(where: { $0.id == initialProjectID }) == true ? initialProjectID : ""
+            workspace = projectID.isEmpty ? value.workspaces.first ?? "" : ""
         } catch { self.error = error.localizedDescription }
     }
 
@@ -120,13 +164,65 @@ struct NewAgentView: View {
         loading = true; error = nil
         Task {
             do {
-                let agent = try await APIClient(baseURL: baseURL).createAgent(title: title, workspaceDir: workspace, model: model, systemPrompt: systemPrompt)
+                let agent = try await APIClient(baseURL: baseURL).createAgent(title: title, workspaceDir: workspace, projectId: projectID, model: model, systemPrompt: systemPrompt)
                 created(agent)
             } catch { self.error = error.localizedDescription }
             loading = false
         }
     }
 }
+
+private struct NewProjectView: View {
+    let baseURL: URL
+    let created: (MobileProject) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var slug = ""
+    @State private var defaultDir = ""
+    @State private var loading = false
+    @State private var error: String?
+    @State private var editedSlug = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Project") {
+                    TextField("Name", text: $title)
+                    TextField("Slug", text: $slug).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Folder", text: $defaultDir).textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                if let error { Section { Text(error).foregroundStyle(.red).font(.caption) } }
+            }
+            .navigationTitle("New project")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Create") { create() }.disabled(loading || title.isEmpty || slug.isEmpty || defaultDir.isEmpty) }
+            }
+            .overlay { if loading { ProgressView().padding(18).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) } }
+            .onChange(of: title) { _, value in if !editedSlug { slug = makeSlug(value) } }
+            .onChange(of: slug) { old, new in if new != makeSlug(title) && new != old { editedSlug = true } }
+        }
+    }
+
+    private func makeSlug(_ value: String) -> String {
+        let words = value.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+        guard let first = words.first else { return "" }
+        let joined = first.lowercased() + words.dropFirst().map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined()
+        let filtered = joined.filter { $0.isLetter || $0.isNumber }
+        guard let firstCharacter = filtered.first, firstCharacter.isLetter else { return "" }
+        return String(filtered.prefix(63))
+    }
+
+    private func create() {
+        loading = true; error = nil
+        Task {
+            do { created(try await APIClient(baseURL: baseURL).createProject(slug: slug, title: title, defaultDir: defaultDir)) }
+            catch { self.error = error.localizedDescription; loading = false }
+        }
+    }
+}
+
 
 private struct ScrollableChoicePicker: View {
     let title: String

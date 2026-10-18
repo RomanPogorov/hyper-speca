@@ -13,6 +13,7 @@ struct NativePadRootView: View {
     @State private var showingNews = false
     @State private var showingHealth = false
     @State private var showingNewAgent = false
+    @State private var newAgentProjectID = ""
     @State private var needsLogin = false
     @State private var loginPassword = ""
     @State private var loginError: String?
@@ -35,11 +36,38 @@ struct NativePadRootView: View {
         }
     }
 
+    private var projectSections: [(id: String, title: String, agents: [AgentSummary])] {
+        let grouped = Dictionary(grouping: filtered) { $0.projectId ?? "" }
+        var sections = selectedWorkspace.projects.map { project in
+            (id: project.id, title: project.title, agents: grouped[project.id] ?? [])
+        }
+        if !(grouped[""] ?? []).isEmpty || sections.isEmpty { sections.append((id: "", title: "Misc", agents: grouped[""] ?? [])) }
+        return sections
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(filtered, selection: $selection) { agent in
-                AgentRow(agent: agent).tag(agent)
-                    .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
+            List(selection: $selection) {
+                ForEach(projectSections, id: \.id) { section in
+                    Section {
+                        ForEach(section.agents) { agent in
+                            AgentRow(agent: agent).tag(agent)
+                                .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
+                        }
+                        if section.agents.isEmpty { Text("No chats").foregroundStyle(.secondary) }
+                    } header: {
+                        HStack {
+                            Text(section.title)
+                            Spacer()
+                            Button {
+                                newAgentProjectID = section.id
+                                showingNewAgent = true
+                            } label: { Image(systemName: "plus.circle") }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("New agent in \(section.title)")
+                        }
+                    }
+                }
             }
             .refreshable { await refreshSelected() }
             .navigationTitle(servers.selectedProfile.name)
@@ -61,7 +89,7 @@ struct NativePadRootView: View {
                     } label: { Image(systemName: "ellipsis.circle") }
                     .accessibilityLabel("More")
 
-                    Button { showingNewAgent = true } label: { Image(systemName: "square.and.pencil") }
+                    Button { newAgentProjectID = ""; showingNewAgent = true } label: { Image(systemName: "square.and.pencil") }
                         .accessibilityLabel("New chat")
                 }
             }
@@ -93,7 +121,7 @@ struct NativePadRootView: View {
         .sheet(isPresented: $showingServers) { ServerProfilesView() }
         .sheet(isPresented: $showingHealth) { if let healthURL = servers.trustedHealthURL { HealthSyncView(baseURL: healthURL, serverName: servers.trustedHealthProfile.name) } }
         .fullScreenCover(isPresented: $showingNews) { if let baseURL { NativePadNewsView(baseURL: baseURL) } }
-        .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL) { created in showingNewAgent = false; Task { await refreshSelected(); selection = store.agents.first { $0.id == created.id } } } } }
+        .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL, initialProjectID: newAgentProjectID) { created in showingNewAgent = false; Task { await refreshSelected(); selection = store.agents.first { $0.id == created.id } } } } }
         .sheet(isPresented: $needsLogin) {
             NativeLoginView(password: $loginPassword, error: loginError, isLoading: loggingIn, sso: { signInWithSSO() }) { login() }
         }

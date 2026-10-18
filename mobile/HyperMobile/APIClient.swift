@@ -22,7 +22,8 @@ struct APIClient {
     private struct MobileExchangeBody: Encodable { let code: String }
     private struct MobileExchangeResponse: Decodable { let ok: Bool; let user: AuthUser }
     private struct LogoutResponse: Decodable { let ok: Bool }
-    private struct CreateAgentBody: Encodable { let title: String; let workspaceDir: String; let model: String; let systemPrompt: String; let createWorkspaceDir: Bool }
+    private struct CreateAgentBody: Encodable { let title: String; let workspaceDir: String; let projectId: String; let model: String; let systemPrompt: String; let createWorkspaceDir: Bool }
+    private struct CreateProjectBody: Encodable { let slug: String; let title: String; let defaultDir: String; let defaultHost: String; let createDir: Bool }
 
     private struct ModelBody: Encodable { let model: String }
     private struct InjectBody: Encodable { let text: String; let every: Int }
@@ -97,9 +98,19 @@ struct APIClient {
         try await request(path: "api/mobile/v1/new-agent-options")
     }
 
-    func createAgent(title: String, workspaceDir: String, model: String, systemPrompt: String, createWorkspaceDir: Bool = false) async throws -> CreatedAgent {
-        let response: CreatedAgentResponse = try await request(path: "api/mobile/v1/agents", method: "POST", body: CreateAgentBody(title: title, workspaceDir: workspaceDir, model: model, systemPrompt: systemPrompt, createWorkspaceDir: createWorkspaceDir))
+    func createAgent(title: String, workspaceDir: String, projectId: String = "", model: String, systemPrompt: String, createWorkspaceDir: Bool = false) async throws -> CreatedAgent {
+        let response: CreatedAgentResponse = try await request(path: "api/mobile/v1/agents", method: "POST", body: CreateAgentBody(title: title, workspaceDir: workspaceDir, projectId: projectId, model: model, systemPrompt: systemPrompt, createWorkspaceDir: createWorkspaceDir))
         return response.agent
+    }
+
+    func projects() async throws -> [MobileProject] {
+        let response: ProjectsResponse = try await request(path: "api/mobile/v1/projects")
+        return response.projects
+    }
+
+    func createProject(slug: String, title: String, defaultDir: String, defaultHost: String = "", createDir: Bool = true) async throws -> MobileProject {
+        let response: CreatedProjectResponse = try await request(path: "api/mobile/v1/projects", method: "POST", body: CreateProjectBody(slug: slug, title: title, defaultDir: defaultDir, defaultHost: defaultHost, createDir: createDir))
+        return response.project
     }
 
 

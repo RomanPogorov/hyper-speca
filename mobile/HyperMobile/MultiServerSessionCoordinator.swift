@@ -2,6 +2,7 @@ import Foundation
 
 struct ServerWorkspaceSnapshot {
     var agents: [AgentSummary] = []
+    var projects: [MobileProject] = []
     var isLoading = false
     var error: String?
     var lastUpdated: Date?
@@ -16,7 +17,7 @@ final class MultiServerSessionCoordinator: ObservableObject {
     func workspace(for profileID: String) -> ServerWorkspaceSnapshot {
         if let live = workspaces[profileID] { return live }
         let cached = MobileStateCache.shared.server(profileID)
-        return ServerWorkspaceSnapshot(agents: cached.agents, isLoading: false, error: nil, lastUpdated: cached.updatedAt)
+        return ServerWorkspaceSnapshot(agents: cached.agents, projects: cached.projects, isLoading: false, error: nil, lastUpdated: cached.updatedAt)
     }
 
     func activate(profiles: [ServerProfile], serverStore: ServerProfileStore) {
@@ -44,13 +45,17 @@ final class MultiServerSessionCoordinator: ObservableObject {
             let auth = try await client.authSession()
             serverStore.updateAuth(profileID: profile.id, session: auth)
             guard auth.authenticated else { mutate(profile.id) { $0.error = nil }; return }
-            let agents = try await client.agents()
+            async let agentsRequest = client.agents()
+            async let projectsRequest: [MobileProject] = (try? client.projects()) ?? []
+            let (agents, projects) = try await (agentsRequest, projectsRequest)
             mutate(profile.id) { snapshot in
                 snapshot.agents = agents
+                snapshot.projects = projects
                 snapshot.error = nil
                 snapshot.lastUpdated = Date()
             }
             MobileStateCache.shared.updateAgents(agents, profileID: profile.id)
+            MobileStateCache.shared.updateProjects(projects, profileID: profile.id)
         } catch let error as APIClientError {
             if case .unauthorized = error { serverStore.markSignedOut(profile.id) }
             mutate(profile.id) { $0.error = error.localizedDescription }

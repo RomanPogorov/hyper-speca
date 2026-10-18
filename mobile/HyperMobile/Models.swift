@@ -10,6 +10,8 @@ struct AgentSummary: Codable, Identifiable, Hashable {
     let turns: Int
     let updatedAt: Double
     let workspaceDir: String
+    let projectId: String?
+    let projectTitle: String?
     let pinned: Bool
     let delegated: Bool
 
@@ -36,15 +38,32 @@ struct HealthSamplesResponse: Codable { let version: Int; let ok: Bool; let inse
 struct HealthServerMetric: Codable, Identifiable { let kind: String; let samples: Int; let earliestMetric: Date?; let latestMetric: Date?; let latestRecentMetric: Date?; let latestUpload: Date?; var id: String { kind } }
 struct CanonicalSleepStatus: Codable { let recordedAt: Date?; let sleepEnd: Date?; let totalMinutes: Int? }
 struct HealthServerStatus: Codable { let version: Int; let metrics: [HealthServerMetric]; let canonicalSleep: CanonicalSleepStatus? }
+struct MobileProject: Codable, Hashable, Identifiable {
+    let id: String
+    let slug: String
+    let title: String
+    let defaultDir: String?
+    let defaultHost: String
+    let createdBy: String?
+    let createdAt: Double
+    let updatedAt: Double
+    let archivedAt: Double?
+    let agents: Int?
+}
+struct ProjectsResponse: Codable { let version: Int; let projects: [MobileProject] }
+struct CreatedProjectResponse: Codable { let version: Int; let project: MobileProject }
+
+
 struct NewAgentOptions: Codable {
     let version: Int
     let defaultModel: String
     let models: [MobileModel]
     let workspaces: [String]
+    let projects: [MobileProject]?
 }
 struct MobileModel: Codable, Hashable, Identifiable { let provider: String; let model: String; var id: String { model } }
 struct CreatedAgentResponse: Codable { let version: Int; let agent: CreatedAgent }
-struct CreatedAgent: Codable { let id: String; let title: String; let model: String; let workspaceDir: String }
+struct CreatedAgent: Codable { let id: String; let title: String; let model: String; let workspaceDir: String; let projectId: String? }
 
 
 struct AgentsResponse: Codable { let version: Int; let agents: [AgentSummary] }

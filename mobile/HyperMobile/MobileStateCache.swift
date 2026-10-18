@@ -12,6 +12,7 @@ struct CachedChatState: Codable {
 
 struct CachedServerUIState: Codable {
     var agents: [AgentSummary] = []
+    var projects: [MobileProject] = []
     var chats: [String: CachedChatState] = [:]
     var drafts: [String: String] = [:]
     var selectedAgentID: String?
@@ -57,6 +58,10 @@ final class MobileStateCache {
     func updateAgents(_ agents: [AgentSummary], profileID: String) {
         mutate(profileID) { $0.agents = agents }
     }
+    func updateProjects(_ projects: [MobileProject], profileID: String) {
+        mutate(profileID) { $0.projects = projects }
+    }
+
 
     func updateChat(_ chat: CachedChatState, profileID: String, agentID: String) {
         mutate(profileID) { state in
