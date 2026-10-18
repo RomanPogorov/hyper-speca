@@ -2,7 +2,7 @@
  * Lists the global menu (⌘/) tabs of the current viewer in display order, each resolved to its widget
  * placements and search sources.
  *
- * Built-in tabs: `home` with the core widgets (chats, shared, pages, projects) and `plugins`, with the pages plugins declare
+ * Built-in tabs: `home` with the core widgets (chats, projects, pages) and `plugins`, with the pages plugins declare
  * (pluginPages) followed by every plugin widget (module other than nav) the layout does not place on any tab nor list in widgetsHidden — shown only when it has
  * something. Both ask every search source unless the layout narrows them. The effective layout (nav.layout) lists tabs in order: an entry with id `home` or `plugins`
  * overrides that built-in tab's fields, any other id with a title is the person's own tab; built-in tabs not
@@ -29,7 +29,7 @@ export default async function (
     const unplaced = Object.values(widgets).filter(w => w.module !== "nav" && !placedAnywhere.has(w.id) && !widgetsHidden.has(w.id))
         .sort((a, b) => a.module.localeCompare(b.module) || a.id.localeCompare(b.id));
     const declared: Record<string, types.nav.Tab & { id: string }> = {
-        home: { id: "home", title: "Home", icon: "ph-house", order: 0, widgets: ["chats", "pages"].map(w => ({ id: w, widget: w, size: "tall" as const })) },
+        home: { id: "home", title: "Home", icon: "ph-house", order: 0, widgets: ["chats", "projects", "pages"].map(w => ({ id: w, widget: w, size: "tall" as const })) },
         plugins: { id: "plugins", title: "Plugins", icon: "ph-plugs", order: 1, widgets: widgets.pluginPages ? [{ id: "pluginPages", widget: "pluginPages", size: "wide" }] : [] },
     };
     const sources = state.search ?? {};

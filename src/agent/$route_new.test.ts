@@ -167,3 +167,17 @@ describe("agent new routes", () => {
     expect(created.systemPrompt).toBe("Only haiku.");
   });
 });
+
+describe("agent new inside a project", () => {
+  test("an empty folder inside a project is left to agent.start, which uses the project's folder", async () => {
+    const { ctx, started } = await mkCtx();
+    (ctx.state.registry as any).project.list = async () => [{ id: "p", slug: "pp", title: "P", defaultDir: "/proj", defaultHost: "" }];
+    const page = await (await ctx.fns.procs.http.dispatch({ url: "/agent/new?project=p" })).text();
+    expect(page).toMatch(/name="workspaceDir" value=""/);
+    expect(page).toContain("/proj (project folder)");
+    const res = await ctx.fns.procs.http.dispatch({ url: "/agent/new", method: "POST", body: new URLSearchParams({ projectId: "p", workspaceDir: "" }) });
+    expect(res.status).toBe(303);
+    expect(started.at(-1).projectId).toBe("p");
+    expect(started.at(-1).workspaceDir).toBeUndefined();
+  });
+});
