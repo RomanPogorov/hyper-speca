@@ -16,7 +16,7 @@ struct NativePadRootView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var query = ""
     @State private var navigationMode = NavigationMode.recent
-    @State private var selectedProjectID = ""
+    @State private var expandedProjectIDs: Set<String> = []
     @State private var showingSettings = false
     @State private var showingServers = false
     @State private var showingNews = false
@@ -53,9 +53,6 @@ struct NativePadRootView: View {
         if !(grouped[""] ?? []).isEmpty || sections.isEmpty { sections.append((id: "", title: "Misc", agents: grouped[""] ?? [])) }
         return sections
     }
-    private var selectedProjectSection: (id: String, title: String, agents: [AgentSummary])? {
-        projectSections.first { $0.id == selectedProjectID } ?? projectSections.first
-    }
 
 
 
@@ -76,41 +73,38 @@ struct NativePadRootView: View {
                             AgentRow(agent: agent).tag(agent)
                                 .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
                         }
-                    } else if let current = selectedProjectSection {
-                        Section {
-                            DisclosureGroup(isExpanded: .constant(true)) {
-                                ForEach(current.agents) { agent in
-                                    AgentRow(agent: agent).tag(agent)
-                                        .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
-                                }
-                                if current.agents.isEmpty { Text("No chats").foregroundStyle(.secondary) }
-                            } label: {
-                                Menu {
-                                    ForEach(projectSections, id: \.id) { section in
-                                        Button { selectedProjectID = section.id } label: {
-                                            if section.id == current.id { Label(section.title, systemImage: "checkmark") }
-                                            else { Text(section.title) }
-                                        }
+                    } else {
+                        ForEach(projectSections, id: \.id) { section in
+                            Section {
+                                DisclosureGroup(isExpanded: Binding(
+                                    get: { expandedProjectIDs.contains(section.id) },
+                                    set: { expanded in
+                                        if expanded { expandedProjectIDs.insert(section.id) }
+                                        else { expandedProjectIDs.remove(section.id) }
                                     }
+                                )) {
+                                    ForEach(section.agents) { agent in
+                                        AgentRow(agent: agent).tag(agent)
+                                            .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
+                                    }
+                                    if section.agents.isEmpty { Text("No chats").foregroundStyle(.secondary) }
                                 } label: {
                                     HStack {
-                                        Text(current.title).font(.headline)
+                                        Text(section.title).font(.headline)
                                         Spacer()
-                                        Text("\(current.agents.count)").foregroundStyle(.secondary)
-                                        Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.secondary)
+                                        Text("\(section.agents.count)").foregroundStyle(.secondary)
                                     }
                                 }
-                            }
-                        } header: {
-                            HStack {
-                                Text("Project")
-                                Spacer()
-                                Button {
-                                    newAgentProjectID = current.id
-                                    showingNewAgent = true
-                                } label: { Image(systemName: "plus.circle") }
-                                    .buttonStyle(.plain)
-                                    .accessibilityLabel("New agent in \(current.title)")
+                            } header: {
+                                HStack {
+                                    Spacer()
+                                    Button {
+                                        newAgentProjectID = section.id
+                                        showingNewAgent = true
+                                    } label: { Image(systemName: "plus.circle") }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("New agent in \(section.title)")
+                                }
                             }
                         }
                     }
@@ -156,9 +150,6 @@ struct NativePadRootView: View {
         .onChange(of: servers.profiles) { _, profiles in sessions.activate(profiles: profiles, serverStore: servers) }
         .onChange(of: selectedWorkspace.agents) { _, agents in store.agents = agents }
         .onChange(of: selectedWorkspace.error) { _, error in store.error = error }
-        .onChange(of: selectedWorkspace.projects) { _, projects in
-            if !projectSections.contains(where: { $0.id == selectedProjectID }) { selectedProjectID = projects.first?.id ?? "" }
-        }
         .onChange(of: selection?.id) { _, value in
             MobileStateCache.shared.updateSelection(profileID: servers.selectedID, agentID: value)
             columnVisibility = value == nil ? .all : .detailOnly
