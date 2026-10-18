@@ -83,6 +83,14 @@ struct NativePadRootView: View {
                                         else { expandedProjectIDs.remove(section.id) }
                                     }
                                 )) {
+                                    Button {
+                                        newAgentProjectID = section.id
+                                        showingNewAgent = true
+                                    } label: {
+                                        Label("New agent", systemImage: "plus.circle")
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.tint)
                                     ForEach(section.agents) { agent in
                                         AgentRow(agent: agent).tag(agent)
                                             .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
@@ -94,16 +102,6 @@ struct NativePadRootView: View {
                                         Spacer()
                                         Text("\(section.agents.count)").foregroundStyle(.secondary)
                                     }
-                                }
-                            } header: {
-                                HStack {
-                                    Spacer()
-                                    Button {
-                                        newAgentProjectID = section.id
-                                        showingNewAgent = true
-                                    } label: { Image(systemName: "plus.circle") }
-                                        .buttonStyle(.plain)
-                                        .accessibilityLabel("New agent in \(section.title)")
                                 }
                             }
                         }

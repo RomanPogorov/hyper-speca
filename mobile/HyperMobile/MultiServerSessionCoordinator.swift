@@ -14,6 +14,7 @@ final class MultiServerSessionCoordinator: ObservableObject {
     private var loops: [String: Task<Void, Never>] = [:]
     private var activeURLs: [String: String] = [:]
     private var pausedForAuthentication: Set<String> = []
+    private var projectsUnavailable: Set<String> = []
 
     func workspace(for profileID: String) -> ServerWorkspaceSnapshot {
         if let live = workspaces[profileID] { return live }
@@ -27,6 +28,7 @@ final class MultiServerSessionCoordinator: ObservableObject {
             loops.removeValue(forKey: id)?.cancel()
             activeURLs.removeValue(forKey: id)
             pausedForAuthentication.remove(id)
+            projectsUnavailable.remove(id)
             workspaces.removeValue(forKey: id)
         }
         for profile in profiles {
@@ -34,6 +36,7 @@ final class MultiServerSessionCoordinator: ObservableObject {
                 loops.removeValue(forKey: profile.id)?.cancel()
                 workspaces.removeValue(forKey: profile.id)
                 pausedForAuthentication.remove(profile.id)
+                projectsUnavailable.remove(profile.id)
                 start(profile: profile, serverStore: serverStore)
             }
         }
@@ -53,9 +56,14 @@ final class MultiServerSessionCoordinator: ObservableObject {
                 return
             }
             pausedForAuthentication.remove(profile.id)
-            async let agentsRequest = client.agents()
-            async let projectsRequest: [MobileProject] = (try? client.projects()) ?? []
-            let (agents, projects) = try await (agentsRequest, projectsRequest)
+            let agents = try await client.agents()
+            let projects: [MobileProject]
+            if projectsUnavailable.contains(profile.id) {
+                projects = []
+            } else {
+                do { projects = try await client.projects() }
+                catch APIClientError.notFound { projectsUnavailable.insert(profile.id); projects = [] }
+            }
             mutate(profile.id) { snapshot in
                 snapshot.agents = agents
                 snapshot.projects = projects
@@ -94,6 +102,7 @@ final class MultiServerSessionCoordinator: ObservableObject {
         activeURLs.removeValue(forKey: profileID)
         loops.removeValue(forKey: profileID)?.cancel()
         pausedForAuthentication.remove(profileID)
+        projectsUnavailable.remove(profileID)
         workspaces.removeValue(forKey: profileID)
     }
 

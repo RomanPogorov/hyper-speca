@@ -237,6 +237,7 @@ struct APIClient {
             let api = try? JSONDecoder().decode(APIErrorBody.self, from: data)
             let message = api?.message ?? api?.error ?? "HTTP \(http.statusCode)"
             if http.statusCode == 401 { throw APIClientError.unauthorized(message) }
+            if http.statusCode == 404 { throw APIClientError.notFound(message) }
             throw APIClientError.server(message)
         }
         do {
@@ -249,11 +250,12 @@ struct APIClient {
 }
 
 enum APIClientError: LocalizedError {
-    case invalidResponse, unauthorized(String), server(String), decoding(String)
+    case invalidResponse, unauthorized(String), notFound(String), server(String), decoding(String)
     var errorDescription: String? {
         switch self {
         case .invalidResponse: "Invalid server response"
         case .unauthorized(let message): message
+        case .notFound(let message): message
         case .server(let message): message
         case .decoding(let message): "Could not read Hyper response: \(message)"
         }
