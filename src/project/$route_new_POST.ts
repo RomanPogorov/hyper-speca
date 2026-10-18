@@ -1,4 +1,4 @@
-/** Creates a project from the new-project form, then opens the new-agent form inside it; on an error shows the form again with the message.
+/** Creates a project from the new-project form (a missing folder is created), then opens the new-agent form inside it; on an error shows the form again with the message.
  * @param opts.req Incoming HTTP request.
  */
 export default async function (ctx: Context, _session: Session | null, opts: {
@@ -9,7 +9,7 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     const values = { title: String(form.get("title") ?? "").trim(), slug: String(form.get("slug") ?? "").trim(), defaultDir: String(form.get("defaultDir") ?? "").trim() };
     try {
         if (!values.title) throw new Error("Title is required");
-        const project = await ctx.fns.project.create({ title: values.title.slice(0, 120), slug: values.slug, defaultDir: values.defaultDir });
+        const project = await ctx.fns.project.create({ title: values.title.slice(0, 120), slug: values.slug, defaultDir: values.defaultDir, createDir: true });
         ctx.fns.events.emitAgentsChanged({ reason: "project" });
         return new Response(null, { status: 303, headers: { location: `/agent/new?project=${encodeURIComponent(project.id)}` } });
     } catch (error: any) {

@@ -6,6 +6,7 @@
  * @param opts.title Human title.
  * @param opts.defaultDir Absolute working directory of the project (on defaultHost when given).
  * @param opts.defaultHost SSH host alias where defaultDir lives; empty means this machine. @default 
+ * @param opts.createDir Create a missing local defaultDir (with parents) instead of refusing. @default false
  */
 export default async function (
     ctx: Context,
@@ -19,13 +20,20 @@ export default async function (
         defaultDir: string;
         /** SSH host alias where defaultDir lives; empty means this machine. @default  */
         defaultHost?: string;
+        /** Create a missing local defaultDir (with parents) instead of refusing. @default false */
+        createDir?: boolean;
     },
 ): Promise<{ id: string; slug: string; title: string; defaultDir: string | null; defaultHost: string; createdBy: string | null; createdAt: number; updatedAt: number; archivedAt: number | null }> {
     if (!/^[a-z][A-Za-z0-9]{0,62}$/.test(opts.slug)) throw new Error("project.create: slug must be lowerCamelCase, e.g. hyperDesign");
         if (!opts.defaultDir.startsWith("/")) throw new Error("project.create: defaultDir must be absolute");
         const host = String(opts.defaultHost ?? "").trim();
-        if (!host) { const { stat } = await import("node:fs/promises"); const st = await stat(opts.defaultDir).catch(() => null); if (!st?.isDirectory()) throw new Error(`project.create: ${opts.defaultDir} is not a directory`); }
         if (await ctx.fns.project.get({ slug: opts.slug })) throw new Error(`project.create: slug ${opts.slug} is taken`);
+        if (!host) {
+            const { stat, mkdir } = await import("node:fs/promises");
+            let st = await stat(opts.defaultDir).catch(() => null);
+            if (!st && opts.createDir) { await mkdir(opts.defaultDir, { recursive: true }); st = await stat(opts.defaultDir).catch(() => null); }
+            if (!st?.isDirectory()) throw new Error(`project.create: ${opts.defaultDir} is not a directory`);
+        }
         const c: any[] = await ctx.fns.procs.db.select({ sql: `INSERT INTO kv (key, value) VALUES ('project:idCounter', '1') ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(kv.value AS INTEGER) + 1 AS TEXT) RETURNING value`, params: [] });
         let n = Number(c[0].value), id = "";
         while (n > 0) { n -= 1; id = "abcdefghijklmnopqrstuvwxyz"[n % 26] + id; n = Math.floor(n / 26); }

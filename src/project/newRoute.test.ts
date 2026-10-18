@@ -32,7 +32,7 @@ describe("project new routes", () => {
         const res = await post(ctx, { title: "Community", slug: "community", defaultDir: "/tmp" });
         expect(res.status).toBe(303);
         expect(res.headers.get("location")).toBe("/agent/new?project=c");
-        expect(created).toEqual([{ title: "Community", slug: "community", defaultDir: "/tmp" }]);
+        expect(created).toEqual([{ title: "Community", slug: "community", defaultDir: "/tmp", createDir: true }]);
     });
 
     test("POST with an error shows the form again with the message and the typed values", async () => {
@@ -44,4 +44,17 @@ describe("project new routes", () => {
         expect(html).toContain('value="taken"');
         expect(created).toEqual([]);
     });
+});
+
+test("project.create makes a missing local folder only when asked", async () => {
+    const ctx: any = await mkTestCtx();
+    const { mkdtemp, stat, rm } = await import("node:fs/promises");
+    const base = await mkdtemp("/tmp/hyper-project-");
+    const dir = `${base}/a/b`;
+    try {
+        await expect(ctx.fns.project.create({ slug: "zzNoDir", title: "x", defaultDir: dir })).rejects.toThrow(/not a directory/);
+        const p = await ctx.fns.project.create({ slug: "zzMkDir", title: "x", defaultDir: dir, createDir: true });
+        expect(p.defaultDir).toBe(dir);
+        expect((await stat(dir)).isDirectory()).toBe(true);
+    } finally { await rm(base, { recursive: true, force: true }); }
 });
