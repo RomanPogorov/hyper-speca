@@ -8,9 +8,10 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
         createWorkspaceDir: body.createWorkspaceDir === true ? "1" : undefined,
         model: typeof body.model === "string" ? body.model : "",
         systemPrompt: typeof body.systemPrompt === "string" ? body.systemPrompt : "",
+        projectId: typeof body.projectId === "string" ? body.projectId : "",
     });
     if (result.error) return Response.json({ error: "invalid_agent", message: result.error }, { status: 400 });
     if (result.confirmation) return Response.json({ error: "workspace_missing", message: `Workspace does not exist: ${result.confirmation.dir}`, workspaceDir: result.confirmation.dir }, { status: 409 });
     const agent = result.agent!;
-    return Response.json({ version: 1, agent: { id: agent.id, title: agent.title || agent.id, model: agent.model, workspaceDir: agent.workspaceDir || "" } }, { status: 201 });
+    return Response.json({ version: 1, agent: { id: agent.id, title: agent.title || agent.id, model: agent.model, workspaceDir: agent.workspaceDir || "", projectId: agent.projectId ?? (typeof body.projectId === "string" && body.projectId ? body.projectId : null) } }, { status: 201 });
 }

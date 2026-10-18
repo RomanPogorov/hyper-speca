@@ -7,10 +7,10 @@ describe("GET /api/mobile/v1/agents", () => {
         const ctx: any = { fns: { session: { list: async (opts: any) => {
             listOpts = opts;
             return [{ id: "ab", title: "Agent", model: "test:model", runState: "idle", unread: 2, turns: 3, updatedAt: 10, workspaceDir: "/tmp", delegated: false, visibility: "nav" }];
-        } }, mentions: { unreadByAgent: async () => ({ ab: 1 }) }, auth: { pinnedIds: async () => new Set<string>() }, procs: { db: { select: async () => [] } } } };
+        } }, project: { list: async () => [{ id: "p", title: "Mobile", slug: "mobile", defaultDir: "/tmp", defaultHost: "", createdBy: null, createdAt: 1, updatedAt: 1, archivedAt: null, agents: 1 }] }, mentions: { unreadByAgent: async () => ({ ab: 1 }) }, auth: { pinnedIds: async () => new Set<string>() }, procs: { db: { select: async () => [{ id: "ab", projectId: "p" }] } } } };
         const response = await route(ctx, null, { req: new Request("http://localhost/api/mobile/v1/agents"), params: {} });
         expect(response.status).toBe(200);
         expect(listOpts).toEqual({});
-        expect(await response.json()).toEqual({ version: 1, agents: [{ id: "ab", title: "Agent", model: "test:model", runState: "idle", unread: 2, mentions: 1, turns: 3, updatedAt: 10, workspaceDir: "/tmp", pinned: false, delegated: false, visibility: "nav" }] });
+        expect(await response.json()).toEqual({ version: 1, agents: [{ id: "ab", title: "Agent", model: "test:model", runState: "idle", unread: 2, mentions: 1, turns: 3, updatedAt: 10, workspaceDir: "/tmp", projectId: "p", projectTitle: "Mobile", pinned: false, delegated: false, visibility: "nav" }] });
     });
 });
