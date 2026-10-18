@@ -31,6 +31,8 @@ export default async function (
     }
     return opts.items.map(item => {
         const href = String(item.href ?? "");
+        // "+ create" rows look the same in every widget: a plus, primary text, a hairline under them.
+        if (item.action) return `<div class="mb-1 border-b border-ui-border pb-1"><a href="${esc(local(href) ? href : "#")}"${item.id ? ` data-nav-id="${esc(item.id)}"` : ""} class="nav-row flex min-h-7 min-w-0 items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-xs font-medium text-primary outline-none hover:bg-primary/10"><i class="ph ${esc(/^ph-[a-z0-9-]+$/.test(String(item.icon ?? "")) ? item.icon : "ph-plus")} shrink-0" aria-hidden="true"></i><span class="min-w-0 flex-1 truncate">${esc(item.label)}</span></a></div>`;
         const isPinned = !!item.pin && !!pinned?.has(item.pin);
         let pin = "";
         const agentPin = item.pin?.startsWith("agent:") ? item.pin.slice(6) : "";

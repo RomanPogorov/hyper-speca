@@ -29,14 +29,15 @@ test("tabs: built-in home, layout overrides and own tabs, unknown widgets droppe
         ctx.state.nav ??= {};
         ctx.state.nav[kind] = Object.fromEntries(Object.entries(items).map(([id, def]) => [id, { ...def, id, module: id.includes(".") ? id.split(".")[0] : "nav", rel: `${id}.ts` }]));
     };
-    reg("widgets", { chats: { title: "Chats", sizes: ["tall", "M"], render: () => [] }, pages: { title: "Pages", render: () => [] }, "gcal.today": { title: "Today", render: () => [] } });
+    reg("widgets", { chats: { title: "Chats", sizes: ["tall", "M"], render: () => [] }, "myissues.issues": { title: "Issues", sizes: ["M"], render: () => [] }, "gcal.today": { title: "Today", render: () => [] } });
     reg("search", { chats: { title: "Chats", search: () => [] }, "knowledge.people": { title: "People", search: () => [] } });
     let r = await ctx.fns.nav.tabs({});
     expect(r.source).toBe("default");
     expect(r.tabs.map((t: any) => t.id)).toEqual(["home", "plugins"]);
+    // myissues.issues sits on the built-in Home, so only gcal.today is left for Plugins.
     expect(r.tabs[1].widgets.map((w: any) => w.widget)).toEqual(["gcal.today"]);
-    // Core widgets that are not loaded (shared, projects) drop out; a size the widget lacks falls back to its first.
-    expect(r.tabs[0].widgets).toEqual([{ id: "chats", widget: "chats", size: "tall" }, { id: "pages", widget: "pages", size: "M" }]);
+    // Widgets that are not loaded (projects here) drop out; a size the widget lacks falls back to its first.
+    expect(r.tabs[0].widgets).toEqual([{ id: "chats", widget: "chats", size: "tall" }, { id: "myissues.issues", widget: "myissues.issues", size: "M" }]);
     expect(r.tabs[0].search).toEqual(["chats", "knowledge.people"]);
 
     await ctx.fns.settings.set({ module: "nav", scopeType: "global", key: "layout", value: JSON.stringify({

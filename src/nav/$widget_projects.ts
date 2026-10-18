@@ -26,14 +26,14 @@ export default {
         for (const agent of agents as any[]) (byId.get(projectOf.get(String(agent.id)) ?? "") ?? byId.get("")!).chats.push(agent);
         const shown = groups.filter(g => g.id || g.chats.length);
         const key = (g: { id: string }) => g.id || "misc";
-        const master = shown.map(g => {
+        const master = await ctx.fns.nav.rows({ items: [{ id: "project:new", label: "New project", href: "/project/new", icon: "ph-plus", action: true }] }) + shown.map(g => {
             const unread = g.chats.some(a => a.hasUnread);
             const running = g.chats.some(a => a.runState && a.runState !== "idle");
             return `<button type="button" data-nav-project-pick="${esc(key(g))}" data-nav-id="project:${esc(key(g))}" class="nav-row flex min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-xs outline-none hover:bg-base-200/60 aria-[current=true]:bg-primary/10 aria-[current=true]:font-semibold"><i class="ph ${g.id ? "ph-folder" : "ph-tray"} shrink-0 text-faint" aria-hidden="true"></i><span class="min-w-0 flex-1 truncate">${esc(g.title)}</span>${running ? `<i class="ph ph-circle-notch animate-spin text-faint" aria-label="running"></i>` : ""}${unread ? `<span class="size-1.5 shrink-0 rounded-full bg-primary" aria-label="unread"></span>` : ""}<span class="shrink-0 text-3xs text-faint">${g.chats.length}</span></button>`;
-        }).join("") + `<a href="/project/new" data-nav-id="project:new" class="nav-row mt-1 flex min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-xs text-primary outline-none hover:bg-base-200/60"><i class="ph ph-plus shrink-0" aria-hidden="true"></i><span class="min-w-0 flex-1 truncate">New project</span></a>`;
+        }).join("");
         const panels = await Promise.all(shown.map(async (g, i) => {
             const rows = await ctx.fns.nav.rows({ items: [
-                { id: `project:${key(g)}:new`, label: g.id ? `New agent in ${g.title}` : "New agent", href: g.newHref, icon: "ph-plus-circle" },
+                { id: `project:${key(g)}:new`, label: g.id ? `New agent in ${g.title}` : "New agent", href: g.newHref, icon: "ph-plus", action: true },
                 ...await ctx.fns.nav.chatItems({ agents: g.chats.slice(0, limit) }),
             ] });
             const more = g.chats.length > limit ? `<p class="px-2 py-1 text-3xs text-faint">${g.chats.length - limit} more — search ⌘/</p>` : "";

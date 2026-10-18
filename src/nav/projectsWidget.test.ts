@@ -20,4 +20,7 @@ test("projects widget: one pick and one panel per project plus Misc; panels open
     expect(panel("misc")).toContain("loose");
     expect(html).toMatch(/data-nav-project-panel="misc" hidden/);
     expect(html).toContain('href="/project/new"');
+    // "+ create" rows open both columns, drawn the same way.
+    expect(html.indexOf('href="/project/new"')).toBeLessThan(html.indexOf('data-nav-project-pick'));
+    expect(panel("a").indexOf("/agent/new?project=a")).toBeLessThan(panel("a").indexOf("in project"));
 });

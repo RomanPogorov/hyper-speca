@@ -40,14 +40,14 @@ test("edit ops: move, size, config, rename, move and remove tabs, reset; POST /n
     const ctx: any = await mkTestCtx();
     reg(ctx, {
         chats: { title: "Chats", sizes: ["tall", "M"], render: () => [] },
-        pages: { title: "Pages", sizes: ["tall", "M"], render: () => [] },
+        projects: { title: "Projects", sizes: ["tall", "M"], render: () => [] },
     });
-    await ctx.fns.nav.editLayout({ op: "move", tab: "home", id: "pages", dir: -1 });
+    await ctx.fns.nav.editLayout({ op: "move", tab: "home", id: "projects", dir: -1 });
     await ctx.fns.nav.editLayout({ op: "size", tab: "home", id: "chats", size: "M" });
     await ctx.fns.nav.editLayout({ op: "config", tab: "home", id: "chats", config: { limit: 5 } });
     let home = (await ctx.fns.nav.tabs({})).tabs[0];
-    expect(home.widgets).toEqual([{ id: "pages", widget: "pages", size: "tall" }, { id: "chats", widget: "chats", size: "M", config: { limit: 5 } }]);
-    expect((await ctx.fns.nav.editLayout({ op: "move", tab: "home", id: "pages", dir: -1 })).ok).toBe(false);
+    expect(home.widgets).toEqual([{ id: "projects", widget: "projects", size: "tall" }, { id: "chats", widget: "chats", size: "M", config: { limit: 5 } }]);
+    expect((await ctx.fns.nav.editLayout({ op: "move", tab: "home", id: "projects", dir: -1 })).ok).toBe(false);
 
     await ctx.fns.nav.editLayout({ op: "addTab", title: "Здоровье" });
     let tabs = (await ctx.fns.nav.tabs({})).tabs;

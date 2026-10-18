@@ -2,7 +2,7 @@
  * Lists the global menu (⌘/) tabs of the current viewer in display order, each resolved to its widget
  * placements and search sources.
  *
- * Built-in tabs: `home` with the core widgets (chats, projects, pages) and `plugins`, with the pages plugins declare
+ * Built-in tabs: `home` with Recent chats, Projects and GitHub issues (myissues, when that plugin is mounted) and `plugins`, with the pages plugins declare
  * (pluginPages) followed by every plugin widget (module other than nav) the layout does not place on any tab nor list in widgetsHidden — shown only when it has
  * something. Both ask every search source unless the layout narrows them. The effective layout (nav.layout) lists tabs in order: an entry with id `home` or `plugins`
  * overrides that built-in tab's fields, any other id with a title is the person's own tab; built-in tabs not
@@ -24,12 +24,18 @@ export default async function (
     // Plugin widgets (any module but nav) the layout does not place on some tab land on the built-in
     // Plugins tab, so a newly mounted plugin shows up without anyone editing a layout.
     // (Placements stored on the plugins tab itself do not count: a widget moved to another tab leaves it.)
-    const placedAnywhere = new Set((layout.tabs ?? []).filter(t => t.id !== "plugins").flatMap(t => (Array.isArray(t.widgets) ? t.widgets : []).map((w: any) => String(w?.widget ?? ""))));
+    // The built-in Home places its widgets too, unless the layout gives Home its own list.
+    const homeWidgets = ["chats", "projects", "myissues.issues"];
+    const storedHome = (layout.tabs ?? []).find(t => t.id === "home");
+    const placedAnywhere = new Set([
+        ...(storedHome && Array.isArray(storedHome.widgets) ? [] : homeWidgets),
+        ...(layout.tabs ?? []).filter(t => t.id !== "plugins").flatMap(t => (Array.isArray(t.widgets) ? t.widgets : []).map((w: any) => String(w?.widget ?? ""))),
+    ]);
     const widgetsHidden = new Set(layout.widgetsHidden ?? []);
     const unplaced = Object.values(widgets).filter(w => w.module !== "nav" && !placedAnywhere.has(w.id) && !widgetsHidden.has(w.id))
         .sort((a, b) => a.module.localeCompare(b.module) || a.id.localeCompare(b.id));
     const declared: Record<string, types.nav.Tab & { id: string }> = {
-        home: { id: "home", title: "Home", icon: "ph-house", order: 0, widgets: ["chats", "projects", "pages"].map(w => ({ id: w, widget: w, size: "tall" as const })) },
+        home: { id: "home", title: "Home", icon: "ph-house", order: 0, widgets: homeWidgets.map(w => ({ id: w, widget: w, size: "tall" as const })) },
         plugins: { id: "plugins", title: "Plugins", icon: "ph-plugs", order: 1, widgets: widgets.pluginPages ? [{ id: "pluginPages", widget: "pluginPages", size: "wide" }] : [] },
     };
     const sources = state.search ?? {};
