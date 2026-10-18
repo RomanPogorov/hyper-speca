@@ -293,37 +293,40 @@ struct ServerSwitcherMenu: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(sortedProfiles) { profile in
-                                Button {
-                                    servers.select(profile.id)
-                                    isPresented = false
-                                } label: {
-                                    let status = serverConnectionDisplay(profile, servers: servers, discovery: discovery)
-                                    HStack(spacing: 12) {
-                                        Image(systemName: status.icon)
-                                            .foregroundStyle(status.color)
-                                            .frame(width: 22)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(profile.name).foregroundStyle(.primary).lineLimit(1)
-                                            Text(status.label).font(.caption).foregroundStyle(status.color).lineLimit(1)
-                                        }
-                                        Spacer(minLength: 12)
-                                        if profile.id == servers.selectedID { Image(systemName: "checkmark").foregroundStyle(.blue).fontWeight(.semibold) }
-                                        if servers.auth(for: profile.id).status == .signInRequired {
-                                            Button("Sign in") {
-                                                isPresented = false
-                                                Task { @MainActor in
-                                                    try? await Task.sleep(for: .milliseconds(300))
-                                                    signingInProfile = profile
-                                                }
+                                let status = serverConnectionDisplay(profile, servers: servers, discovery: discovery)
+                                HStack(spacing: 8) {
+                                    Button {
+                                        servers.select(profile.id)
+                                        isPresented = false
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            Image(systemName: status.icon)
+                                                .foregroundStyle(status.color)
+                                                .frame(width: 22)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(profile.name).foregroundStyle(.primary).lineLimit(1)
+                                                Text(status.label).font(.caption).foregroundStyle(status.color).lineLimit(1)
                                             }
-                                            .buttonStyle(.bordered)
+                                            Spacer(minLength: 12)
+                                            if profile.id == servers.selectedID { Image(systemName: "checkmark").foregroundStyle(.blue).fontWeight(.semibold) }
                                         }
+                                        .contentShape(Rectangle())
                                     }
-                                    .contentShape(Rectangle())
-                                    .padding(.horizontal, 16)
-                                    .frame(minHeight: 56)
+                                    .buttonStyle(.plain)
+                                    if servers.auth(for: profile.id).status == .signInRequired {
+                                        Button("Sign in") {
+                                            servers.select(profile.id)
+                                            isPresented = false
+                                            Task { @MainActor in
+                                                try? await Task.sleep(for: .milliseconds(350))
+                                                signingInProfile = profile
+                                            }
+                                        }
+                                        .buttonStyle(.bordered)
+                                    }
                                 }
-                                .buttonStyle(.plain)
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 56)
                                 .id(profile.id)
                                 if profile.id != sortedProfiles.last?.id { Divider().padding(.leading, 50) }
                             }
