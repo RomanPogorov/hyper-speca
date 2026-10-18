@@ -24,7 +24,14 @@ struct HyperMobileApp: App {
             .environmentObject(servers)
             .environmentObject(sessions)
             .task { await HyperMeshDiscovery.shared.refresh(serverStore: servers) }
-            .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await HyperMeshDiscovery.shared.refresh(serverStore: servers) } } }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    Task {
+                        await HyperMeshDiscovery.shared.refresh(serverStore: servers)
+                        sessions.resumeAll(profiles: servers.profiles, serverStore: servers)
+                    }
+                }
+            }
         }
     }
 }

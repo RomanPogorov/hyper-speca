@@ -5,6 +5,7 @@ struct NativeRootView: View {
     @EnvironmentObject private var servers: ServerProfileStore
     @EnvironmentObject private var sessions: MultiServerSessionCoordinator
     @StateObject private var store = AgentListStore()
+    @StateObject private var discovery = HyperMeshDiscovery.shared
     @State private var showingSettings = false
     @State private var showingServers = false
     @State private var showingHealth = false
@@ -119,7 +120,7 @@ struct NativeRootView: View {
         .onChange(of: createdAgentToOpen?.id) { _, value in MobileStateCache.shared.updateSelection(profileID: servers.selectedID, agentID: value) }
         .onDisappear { store.stopRefreshing() }
         .onChange(of: servers.selectedID) { _, _ in needsLogin = false; switchServer() }
-        .onChange(of: servers.auth(for: servers.selectedID).status) { _, status in needsLogin = status == .signInRequired }
+        .onChange(of: servers.auth(for: servers.selectedID).status) { _, _ in needsLogin = shouldRequireLogin }
         .navigationDestination(item: $createdAgentToOpen) { agent in
             if let baseURL { NativeChatView(agent: agent, baseURL: baseURL, profileID: servers.selectedID, onRead: { Task { await refreshSelected() } }, onNextUnread: { openNextUnread(after: agent.id) }).id(agent.id) }
         }
@@ -190,16 +191,20 @@ struct NativeRootView: View {
         store.agents = snapshot.agents
         store.error = snapshot.error
         authUser = authUserFromSnapshot()
-        needsLogin = servers.auth(for: servers.selectedID).status == .signInRequired
+        needsLogin = shouldRequireLogin
     }
     private func login() {
         guard let baseURL, !loginPassword.isEmpty else { return }
         isLoggingIn = true; loginError = nil
-        Task { do { try await APIClient(baseURL: baseURL).login(password: loginPassword); loginPassword = ""; needsLogin = false; await refreshSelected() } catch { loginError = error.localizedDescription }; isLoggingIn = false }
+        Task { do { try await APIClient(baseURL: baseURL).login(password: loginPassword); loginPassword = ""; needsLogin = false; sessions.resume(profile: servers.selectedProfile, serverStore: servers); await refreshSelected() } catch { loginError = error.localizedDescription }; isLoggingIn = false }
     }
-    private func signInWithSSO() { guard let baseURL else { return }; isLoggingIn = true; loginError = nil; Task { do { try await sso.signIn(baseURL: baseURL); needsLogin = false; await refreshSelected() } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { } catch { loginError = error.localizedDescription }; isLoggingIn = false } }
+    private func signInWithSSO() { guard let baseURL else { return }; isLoggingIn = true; loginError = nil; Task { do { try await sso.signIn(baseURL: baseURL); needsLogin = false; sessions.resume(profile: servers.selectedProfile, serverStore: servers); await refreshSelected() } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { } catch { loginError = error.localizedDescription }; isLoggingIn = false } }
     private func logout() { guard let baseURL else { return }; let profileID = servers.selectedID; Task { do { try await APIClient(baseURL: baseURL).logout(); ServerSessionPool.shared.clear(baseURL: baseURL); servers.markSignedOut(profileID); sessions.remove(profileID: profileID); sessions.activate(profiles: servers.profiles, serverStore: servers); store.stopRefreshing(); store.agents = []; authUser = nil; loginPassword = ""; loginError = nil; needsLogin = true } catch { loginError = error.localizedDescription } } }
-    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); selectedFolder = cached.selectedFolder.flatMap { id in id.isEmpty || snapshot.projects.contains(where: { $0.id == id }) ? id : nil }; query = cached.query; createdAgentToOpen = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = servers.auth(for: servers.selectedID).status == .signInRequired; Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
+    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); selectedFolder = cached.selectedFolder.flatMap { id in id.isEmpty || snapshot.projects.contains(where: { $0.id == id }) ? id : nil }; query = cached.query; createdAgentToOpen = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = shouldRequireLogin; sessions.resume(profile: servers.selectedProfile, serverStore: servers, refreshImmediately: false); Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
+    private var shouldRequireLogin: Bool {
+        servers.auth(for: servers.selectedID).status == .signInRequired && discovery.reachability(for: baseURL) != .noAccess
+    }
+
     private func authUserFromSnapshot() -> APIClient.AuthUser? { let auth = servers.auth(for: servers.selectedID); guard auth.status == .authenticated else { return nil }; return APIClient.AuthUser(id: auth.userID, name: auth.userName ?? "Signed in", email: auth.userEmail, role: auth.role ?? "user") }
     private func pin(_ agent: AgentSummary, _ pinned: Bool) { guard let baseURL else { return }; Task { await store.setPinned(agent, pinned: pinned, baseURL: baseURL); await refreshSelected() } }
     private func archive(_ agent: AgentSummary) { guard let baseURL else { return }; Task { do { _ = try await APIClient(baseURL: baseURL).archiveAgent(agentID: agent.id); await refreshSelected() } catch { store.error = error.localizedDescription } } }
@@ -254,7 +259,7 @@ private enum ProjectColor {
 
 struct NativeLoginView: View {
     @Binding var password: String; let error: String?; let isLoading: Bool; var sso: (() -> Void)? = nil; let submit: () -> Void; @FocusState private var focused: Bool
-    var body: some View { VStack(spacing: 18) { Spacer(); Image(systemName: "lock.shield.fill").font(.system(size: 46)).foregroundStyle(.indigo); Text("Sign in").font(.title2.bold()); if let sso { Button("Sign in with SSO", action: sso).buttonStyle(.borderedProminent).controlSize(.large).disabled(isLoading); Text("or").font(.caption).foregroundStyle(.secondary) }; SecureField("Password", text: $password).onSubmit(submit).focused($focused).padding(14).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14)); if let error { Text(error).font(.caption).foregroundStyle(.red) }; Button("Sign in with password", action: submit).buttonStyle(.bordered).controlSize(.large).disabled(password.isEmpty || isLoading); Spacer() }.padding(24).background(DotLoginBackground()).task { if sso == nil { focused = true } } }
+    var body: some View { VStack(spacing: 18) { Spacer(); Image(systemName: "lock.shield.fill").font(.system(size: 46)).foregroundStyle(.indigo); Text("Sign in").font(.title2.bold()); if let sso { Button("Sign in with Hypermesh", action: sso).buttonStyle(.borderedProminent).controlSize(.large).disabled(isLoading); Text("or").font(.caption).foregroundStyle(.secondary) }; SecureField("Password", text: $password).onSubmit(submit).focused($focused).padding(14).background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14)); if let error { Text(error).font(.caption).foregroundStyle(.red) }; Button("Sign in with password", action: submit).buttonStyle(.bordered).controlSize(.large).disabled(password.isEmpty || isLoading); Spacer() }.padding(24).background(DotLoginBackground()).task { if sso == nil { focused = true } } }
 }
 struct DotLoginBackground: View { var body: some View { Color(.systemGroupedBackground).overlay(Canvas { context, size in var path = Path(); for y in stride(from: 8.0, to: size.height, by: 16) { for x in stride(from: 8.0, to: size.width, by: 16) { path.addEllipse(in: .init(x: x-1, y: y-1, width: 2, height: 2)) } }; context.fill(path, with: .color(.secondary.opacity(0.13))) }).ignoresSafeArea() } }
 struct NativeSettingsView: View { @Binding var serverURL: String; let connected: () -> Void; @State private var draft: String; @Environment(\.dismiss) private var dismiss; init(serverURL: Binding<String>, connected: @escaping () -> Void) { _serverURL = serverURL; self.connected = connected; _draft = State(initialValue: serverURL.wrappedValue) }; var body: some View { NavigationStack { Form { TextField("Server", text: $draft).textInputAutocapitalization(.never).autocorrectionDisabled(); Button("Connect") { serverURL = draft; connected(); dismiss() } }.navigationTitle("Connection").toolbar { Button("Cancel") { dismiss() } } } } }

@@ -230,10 +230,51 @@ enum ServerProfileError: LocalizedError {
     }
 }
 
+private struct ServerConnectionDisplay {
+    let icon: String
+    let color: Color
+    let label: String
+}
+
+@MainActor
+private func serverConnectionDisplay(_ profile: ServerProfile, servers: ServerProfileStore, discovery: HyperMeshDiscovery) -> ServerConnectionDisplay {
+    switch discovery.reachability(for: profile.baseURL) {
+    case .noAccess:
+        return .init(icon: "lock.fill", color: .red, label: "No access — ask the owner")
+    case .machineOffline:
+        return .init(icon: "desktopcomputer.trianglebadge.exclamationmark", color: .secondary, label: "Server offline")
+    case .serviceDown:
+        return .init(icon: "exclamationmark.circle.fill", color: .red, label: "Hyper is not responding")
+    case .notChecked:
+        if servers.auth(for: profile.id).status == .signInRequired {
+            return .init(icon: "person.crop.circle.badge.exclamationmark", color: .orange, label: "Sign in required")
+        }
+        return .init(icon: "circle.dotted", color: .secondary, label: "Not checked")
+    case .up:
+        switch servers.auth(for: profile.id).status {
+        case .authenticated: return .init(icon: "circle.fill", color: .green, label: servers.auth(for: profile.id).userName ?? "Signed in")
+        case .signInRequired: return .init(icon: "person.crop.circle.badge.exclamationmark", color: .orange, label: "Sign in required")
+        case .unknown: return .init(icon: "circle.dotted", color: .secondary, label: "Not checked")
+        }
+    }
+}
+
+
 struct ServerSwitcherMenu: View {
     @EnvironmentObject private var servers: ServerProfileStore
+    @EnvironmentObject private var sessions: MultiServerSessionCoordinator
+    @StateObject private var discovery = HyperMeshDiscovery.shared
     @State private var isPresented = false
     let manage: () -> Void
+
+    private var sortedProfiles: [ServerProfile] {
+        servers.profiles.sorted {
+            let lhs = sessions.workspace(for: $0.id).agents.map(\.updatedAt).max() ?? 0
+            let rhs = sessions.workspace(for: $1.id).agents.map(\.updatedAt).max() ?? 0
+            return lhs == rhs ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending : lhs > rhs
+        }
+    }
+
 
     var body: some View {
         Button { isPresented.toggle() } label: {
@@ -245,20 +286,22 @@ struct ServerSwitcherMenu: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(servers.profiles) { profile in
+                            ForEach(sortedProfiles) { profile in
                                 Button {
                                     servers.select(profile.id)
                                     isPresented = false
                                 } label: {
+                                    let status = serverConnectionDisplay(profile, servers: servers, discovery: discovery)
                                     HStack(spacing: 12) {
-                                        Image(systemName: profile.id == servers.selectedID ? "checkmark.circle.fill" : authIcon(profile.id))
-                                            .foregroundStyle(profile.id == servers.selectedID ? .blue : authColor(profile.id))
+                                        Image(systemName: status.icon)
+                                            .foregroundStyle(status.color)
                                             .frame(width: 22)
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(profile.name).foregroundStyle(.primary).lineLimit(1)
-                                            Text(profile.baseURL?.host ?? profile.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                            Text(status.label).font(.caption).foregroundStyle(status.color).lineLimit(1)
                                         }
                                         Spacer(minLength: 12)
+                                        if profile.id == servers.selectedID { Image(systemName: "checkmark").foregroundStyle(.blue).fontWeight(.semibold) }
                                     }
                                     .contentShape(Rectangle())
                                     .padding(.horizontal, 16)
@@ -266,7 +309,7 @@ struct ServerSwitcherMenu: View {
                                 }
                                 .buttonStyle(.plain)
                                 .id(profile.id)
-                                if profile.id != servers.profiles.last?.id { Divider().padding(.leading, 50) }
+                                if profile.id != sortedProfiles.last?.id { Divider().padding(.leading, 50) }
                             }
                         }
                     }
@@ -291,32 +334,27 @@ struct ServerSwitcherMenu: View {
             .presentationCompactAdaptation(.popover)
         }
     }
-    private func authIcon(_ profileID: String) -> String {
-        switch servers.auth(for: profileID).status {
-        case .authenticated: "circle.fill"
-        case .signInRequired: "exclamationmark.circle.fill"
-        case .unknown: "circle.dotted"
-        }
-    }
-
-    private func authColor(_ profileID: String) -> Color {
-        switch servers.auth(for: profileID).status {
-        case .authenticated: .green
-        case .signInRequired: .orange
-        case .unknown: .secondary
-        }
-    }
 
 
 }
 
 struct ServerProfilesView: View {
     @EnvironmentObject private var servers: ServerProfileStore
+    @EnvironmentObject private var sessions: MultiServerSessionCoordinator
     @StateObject private var discovery = HyperMeshDiscovery.shared
     @Environment(\.dismiss) private var dismiss
     @State private var editor: ServerEditorTarget?
     @State private var pendingDelete: ServerProfile?
     @State private var error: String?
+
+    private var sortedProfiles: [ServerProfile] {
+        servers.profiles.sorted {
+            let lhs = sessions.workspace(for: $0.id).agents.map(\.updatedAt).max() ?? 0
+            let rhs = sessions.workspace(for: $1.id).agents.map(\.updatedAt).max() ?? 0
+            return lhs == rhs ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending : lhs > rhs
+        }
+    }
+
 
     var body: some View {
         NavigationStack {
@@ -336,23 +374,25 @@ struct ServerProfilesView: View {
                     Text("Apple Health data is uploaded only to this Hyper. Switching workspaces does not change the destination.")
                 }
                 Section("Workspaces") {
-                ForEach(servers.profiles) { profile in
+                ForEach(sortedProfiles) { profile in
                     Button { servers.select(profile.id) } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: profile.id == servers.selectedID ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(profile.id == servers.selectedID ? .blue : .secondary)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(profile.name).font(.headline).foregroundStyle(.primary)
-                                Text(profile.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                authLabel(profile.id)
-                                if profile.id == servers.trustedHealthProfileID {
-                                    Label("Health destination", systemImage: "heart.fill").font(.caption2).foregroundStyle(.pink)
+                            let status = serverConnectionDisplay(profile, servers: servers, discovery: discovery)
+                            HStack(spacing: 12) {
+                                Image(systemName: status.icon)
+                                    .foregroundStyle(status.color)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(profile.name).font(.headline).foregroundStyle(.primary)
+                                    Text(profile.url).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Label(status.label, systemImage: status.icon).font(.caption2).foregroundStyle(status.color)
+                                    if profile.id == servers.trustedHealthProfileID {
+                                        Label("Health destination", systemImage: "heart.fill").font(.caption2).foregroundStyle(.pink)
+                                    }
                                 }
+                                Spacer()
+                                if profile.id == servers.selectedID { Image(systemName: "checkmark").foregroundStyle(.blue).fontWeight(.semibold) }
+                                Button { editor = ServerEditorTarget(profile: profile) } label: { Image(systemName: "pencil") }
+                                    .buttonStyle(.borderless).accessibilityLabel("Edit \(profile.name)")
                             }
-                            Spacer()
-                            Button { editor = ServerEditorTarget(profile: profile) } label: { Image(systemName: "pencil") }
-                                .buttonStyle(.borderless).accessibilityLabel("Edit \(profile.name)")
-                        }
                     }
                     .swipeActions {
                         Button("Delete", role: .destructive) { pendingDelete = profile }.disabled(servers.profiles.count == 1)
@@ -381,17 +421,6 @@ struct ServerProfilesView: View {
         }
     }
 
-    @ViewBuilder private func authLabel(_ id: String) -> some View {
-        let auth = servers.auth(for: id)
-        switch auth.status {
-        case .authenticated:
-            Label(auth.userName ?? "Signed in", systemImage: "person.crop.circle.fill").font(.caption2).foregroundStyle(.green)
-        case .signInRequired:
-            Label("Sign in required", systemImage: "person.crop.circle.badge.exclamationmark").font(.caption2).foregroundStyle(.orange)
-        case .unknown:
-            Label("Not checked", systemImage: "questionmark.circle").font(.caption2).foregroundStyle(.tertiary)
-        }
-    }
 }
 
 private struct ServerEditorTarget: Identifiable {

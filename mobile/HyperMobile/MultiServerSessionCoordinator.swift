@@ -13,6 +13,7 @@ final class MultiServerSessionCoordinator: ObservableObject {
     @Published private(set) var workspaces: [String: ServerWorkspaceSnapshot] = [:]
     private var loops: [String: Task<Void, Never>] = [:]
     private var activeURLs: [String: String] = [:]
+    private var pausedForAuthentication: Set<String> = []
 
     func workspace(for profileID: String) -> ServerWorkspaceSnapshot {
         if let live = workspaces[profileID] { return live }
@@ -25,12 +26,14 @@ final class MultiServerSessionCoordinator: ObservableObject {
         for id in Array(loops.keys) where !ids.contains(id) {
             loops.removeValue(forKey: id)?.cancel()
             activeURLs.removeValue(forKey: id)
+            pausedForAuthentication.remove(id)
             workspaces.removeValue(forKey: id)
         }
         for profile in profiles {
             if activeURLs[profile.id] != profile.url {
                 loops.removeValue(forKey: profile.id)?.cancel()
                 workspaces.removeValue(forKey: profile.id)
+                pausedForAuthentication.remove(profile.id)
                 start(profile: profile, serverStore: serverStore)
             }
         }
@@ -44,7 +47,12 @@ final class MultiServerSessionCoordinator: ObservableObject {
             let client = APIClient(baseURL: baseURL)
             let auth = try await client.authSession()
             serverStore.updateAuth(profileID: profile.id, session: auth)
-            guard auth.authenticated else { mutate(profile.id) { $0.error = nil }; return }
+            guard auth.authenticated else {
+                pausedForAuthentication.insert(profile.id)
+                mutate(profile.id) { $0.error = nil }
+                return
+            }
+            pausedForAuthentication.remove(profile.id)
             async let agentsRequest = client.agents()
             async let projectsRequest: [MobileProject] = (try? client.projects()) ?? []
             let (agents, projects) = try await (agentsRequest, projectsRequest)
@@ -57,28 +65,46 @@ final class MultiServerSessionCoordinator: ObservableObject {
             MobileStateCache.shared.updateAgents(agents, profileID: profile.id)
             MobileStateCache.shared.updateProjects(projects, profileID: profile.id)
         } catch let error as APIClientError {
-            if case .unauthorized = error { serverStore.markSignedOut(profile.id) }
-            mutate(profile.id) { $0.error = error.localizedDescription }
+            if case .unauthorized = error {
+                serverStore.markSignedOut(profile.id)
+                pausedForAuthentication.insert(profile.id)
+                mutate(profile.id) { $0.error = nil }
+            } else {
+                mutate(profile.id) { $0.error = error.localizedDescription }
+            }
         } catch {
             mutate(profile.id) { $0.error = error.localizedDescription }
         }
     }
 
+    func resume(profile: ServerProfile, serverStore: ServerProfileStore, refreshImmediately: Bool = true) {
+        pausedForAuthentication.remove(profile.id)
+        loops.removeValue(forKey: profile.id)?.cancel()
+        activeURLs[profile.id] = profile.url
+        start(profile: profile, serverStore: serverStore, refreshImmediately: refreshImmediately)
+    }
+
+    func resumeAll(profiles: [ServerProfile], serverStore: ServerProfileStore) {
+        for profile in profiles { resume(profile: profile, serverStore: serverStore) }
+    }
+
+
     func remove(profileID: String) {
         MobileStateCache.shared.removeServer(profileID)
         activeURLs.removeValue(forKey: profileID)
         loops.removeValue(forKey: profileID)?.cancel()
+        pausedForAuthentication.remove(profileID)
         workspaces.removeValue(forKey: profileID)
     }
 
-    private func start(profile: ServerProfile, serverStore: ServerProfileStore) {
+    private func start(profile: ServerProfile, serverStore: ServerProfileStore, refreshImmediately: Bool = true) {
         activeURLs[profile.id] = profile.url
         loops[profile.id] = Task { [weak self] in
             guard let self else { return }
-            await refresh(profile: profile, serverStore: serverStore)
-            while !Task.isCancelled {
+            if refreshImmediately { await refresh(profile: profile, serverStore: serverStore) }
+            while !Task.isCancelled && !pausedForAuthentication.contains(profile.id) {
                 try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled else { break }
+                guard !Task.isCancelled, !pausedForAuthentication.contains(profile.id) else { break }
                 await refresh(profile: profile, serverStore: serverStore, showLoading: false)
             }
         }

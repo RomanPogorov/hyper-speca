@@ -1,13 +1,21 @@
 import SwiftUI
 import AuthenticationServices
 
+private enum NavigationMode: String, Hashable {
+    case recent
+    case projects
+}
+
+
 struct NativePadRootView: View {
     @EnvironmentObject private var servers: ServerProfileStore
     @EnvironmentObject private var sessions: MultiServerSessionCoordinator
     @StateObject private var store = AgentListStore()
+    @StateObject private var discovery = HyperMeshDiscovery.shared
     @State private var selection: AgentSummary?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var query = ""
+    @State private var navigationMode = NavigationMode.recent
     @State private var showingSettings = false
     @State private var showingServers = false
     @State private var showingNews = false
@@ -47,24 +55,41 @@ struct NativePadRootView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $selection) {
-                ForEach(projectSections, id: \.id) { section in
-                    Section {
-                        ForEach(section.agents) { agent in
+            VStack(spacing: 0) {
+                Picker("Navigation", selection: $navigationMode) {
+                    Text("Recent").tag(NavigationMode.recent)
+                    Text("Projects").tag(NavigationMode.projects)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+
+                List(selection: $selection) {
+                    if navigationMode == .recent {
+                        ForEach(filtered) { agent in
                             AgentRow(agent: agent).tag(agent)
                                 .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
                         }
-                        if section.agents.isEmpty { Text("No chats").foregroundStyle(.secondary) }
-                    } header: {
-                        HStack {
-                            Text(section.title)
-                            Spacer()
-                            Button {
-                                newAgentProjectID = section.id
-                                showingNewAgent = true
-                            } label: { Image(systemName: "plus.circle") }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("New agent in \(section.title)")
+                    } else {
+                        ForEach(projectSections, id: \.id) { section in
+                            Section {
+                                ForEach(section.agents) { agent in
+                                    AgentRow(agent: agent).tag(agent)
+                                        .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: "pin") } }
+                                }
+                                if section.agents.isEmpty { Text("No chats").foregroundStyle(.secondary) }
+                            } header: {
+                                HStack {
+                                    Text(section.title)
+                                    Spacer()
+                                    Button {
+                                        newAgentProjectID = section.id
+                                        showingNewAgent = true
+                                    } label: { Image(systemName: "plus.circle") }
+                                        .buttonStyle(.plain)
+                                        .accessibilityLabel("New agent in \(section.title)")
+                                }
+                            }
                         }
                     }
                 }
@@ -116,7 +141,7 @@ struct NativePadRootView: View {
         .onChange(of: query) { _, value in MobileStateCache.shared.updateListState(profileID: servers.selectedID, folder: nil, query: value) }
         .onDisappear { store.stopRefreshing() }
         .onChange(of: servers.selectedID) { _, _ in needsLogin = false; switchServer() }
-        .onChange(of: servers.auth(for: servers.selectedID).status) { _, status in needsLogin = status == .signInRequired }
+        .onChange(of: servers.auth(for: servers.selectedID).status) { _, _ in needsLogin = shouldRequireLogin }
         .sheet(isPresented: $showingSettings) { ServerProfilesView() }
         .sheet(isPresented: $showingServers) { ServerProfilesView() }
         .sheet(isPresented: $showingHealth) { if let healthURL = servers.trustedHealthURL { HealthSyncView(baseURL: healthURL, serverName: servers.trustedHealthProfile.name) } }
@@ -138,12 +163,16 @@ struct NativePadRootView: View {
         store.agents = snapshot.agents
         store.error = snapshot.error
         authUser = authUserFromSnapshot()
-        needsLogin = servers.auth(for: servers.selectedID).status == .signInRequired
+        needsLogin = shouldRequireLogin
     }
-    private func login() { guard let baseURL, !loginPassword.isEmpty else { return }; loggingIn = true; Task { do { try await APIClient(baseURL: baseURL).login(password: loginPassword); loginPassword = ""; needsLogin = false; await refreshSelected() } catch { loginError = error.localizedDescription }; loggingIn = false } }
-    private func signInWithSSO() { guard let baseURL else { return }; loggingIn = true; loginError = nil; Task { do { try await sso.signIn(baseURL: baseURL); needsLogin = false; await refreshSelected() } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { } catch { loginError = error.localizedDescription }; loggingIn = false } }
+    private func login() { guard let baseURL, !loginPassword.isEmpty else { return }; loggingIn = true; Task { do { try await APIClient(baseURL: baseURL).login(password: loginPassword); loginPassword = ""; needsLogin = false; sessions.resume(profile: servers.selectedProfile, serverStore: servers); await refreshSelected() } catch { loginError = error.localizedDescription }; loggingIn = false } }
+    private func signInWithSSO() { guard let baseURL else { return }; loggingIn = true; loginError = nil; Task { do { try await sso.signIn(baseURL: baseURL); needsLogin = false; sessions.resume(profile: servers.selectedProfile, serverStore: servers); await refreshSelected() } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { } catch { loginError = error.localizedDescription }; loggingIn = false } }
     private func logout() { guard let baseURL else { return }; let profileID = servers.selectedID; Task { do { try await APIClient(baseURL: baseURL).logout(); ServerSessionPool.shared.clear(baseURL: baseURL); servers.markSignedOut(profileID); sessions.remove(profileID: profileID); sessions.activate(profiles: servers.profiles, serverStore: servers); store.stopRefreshing(); store.agents = []; selection = nil; authUser = nil; loginPassword = ""; loginError = nil; needsLogin = true } catch { loginError = error.localizedDescription } } }
-    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); selection = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; query = cached.query; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = servers.auth(for: servers.selectedID).status == .signInRequired; Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
+    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); selection = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; query = cached.query; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = shouldRequireLogin; sessions.resume(profile: servers.selectedProfile, serverStore: servers, refreshImmediately: false); Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
+    private var shouldRequireLogin: Bool {
+        servers.auth(for: servers.selectedID).status == .signInRequired && discovery.reachability(for: baseURL) != .noAccess
+    }
+
     private func authUserFromSnapshot() -> APIClient.AuthUser? { let auth = servers.auth(for: servers.selectedID); guard auth.status == .authenticated else { return nil }; return APIClient.AuthUser(id: auth.userID, name: auth.userName ?? "Signed in", email: auth.userEmail, role: auth.role ?? "user") }
     private func pin(_ agent: AgentSummary, _ value: Bool) { guard let baseURL else { return }; Task { await store.setPinned(agent, pinned: value, baseURL: baseURL); await refreshSelected() } }
 }
