@@ -12,7 +12,7 @@ import net from "node:net";
  *
  * Use as the node:http2 secure server `upgrade` listener. Rewrites forwarding headers (x-forwarded-for,
  * x-forwarded-proto=https, x-forwarded-host) and pipes both directions until either side closes.
- * With HYPER_H2_HTTP1=off there is no HTTP/1.1 on the HTTPS port and WebSockets must use the plain port.
+ * Runs regardless of HYPER_H2_HTTP1: that switch refuses ordinary HTTP/1.1 requests, never WebSocket upgrades.
  * @param opts.req Node IncomingMessage of the upgrade request.
  * @param opts.socket Client TLS socket taken over from the HTTPS server.
  * @param opts.head Bytes already read past the request headers.

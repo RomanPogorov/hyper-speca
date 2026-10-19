@@ -56,8 +56,17 @@ export default async function (ctx: Context, _session: Session | null, _opts?: {
     // too; https://localhost:3443 then shows a name mismatch (tests ignore it).
     const primary = hasTsCert ? { key: await Bun.file(`${dir}/ts-key.pem`).text(), cert: await Bun.file(`${dir}/ts.pem`).text() } : { key, cert };
     const server = http2.createSecureServer({
-        ...primary, allowHTTP1: on(cfg.http1), ALPNProtocols: on(cfg.http1) ? ["h2", "http/1.1"] : ["h2"],
+        // HTTP/1.1 is always negotiable: browsers open WebSockets over a separate
+        // HTTP/1.1 connection (no RFC 8441 here), so refusing it at ALPN silently
+        // breaks every $ws_ endpoint. HYPER_H2_HTTP1=off refuses plain HTTP/1.1
+        // requests below instead and still lets WebSocket upgrades through.
+        ...primary, allowHTTP1: true, ALPNProtocols: ["h2", "http/1.1"],
     }, async (req, res) => {
+        if (!ctx.fns.h2.http1Allowed({ httpVersion: req.httpVersion, http1: on(cfg.http1) })) {
+            res.writeHead(505, { "content-type": "text/plain" });
+            res.end("HTTP/2 only on this port (HYPER_H2_HTTP1=off); WebSocket upgrades are still accepted over HTTP/1.1");
+            return;
+        }
         const inner = (ctx.state.procs.http.server as any)?.server;
         if (!inner?.fetch) { res.writeHead(503); res.end("http server not ready"); return; }
         const authority = (req.headers[":authority"] as string) || (req.headers.host as string) || `localhost:${port}`;
@@ -106,7 +115,13 @@ export default async function (ctx: Context, _session: Session | null, _opts?: {
     // WebSockets arrive as HTTP/1.1 upgrades (no RFC 8441 over h2); see h2/wsProxy.
     server.on("upgrade", (req: any, socket: any, head: any) => ctx.fns.h2.wsProxy({ req, socket, head }));
     await new Promise<void>((ok, fail) => { server.once("error", fail); server.listen(port, cfg.host || "0.0.0.0", () => ok()); });
-    ctx.fns.procs.log.info({ event: "h2.started", msg: `https://${tsName && hasTsCert ? tsName : "localhost"}:${port} (HTTP/2${on(cfg.http1) ? " + HTTP/1.1" : " only"}, experimental)` });
+    ctx.fns.procs.log.info({ event: "h2.started", msg: `https://${tsName && hasTsCert ? tsName : "localhost"}:${port} (HTTP/2${on(cfg.http1) ? " + HTTP/1.1" : " only, HTTP/1.1 for WebSockets"}, experimental)` });
+    // Prove the WebSocket path end to end once; a failure is logged, never fatal.
+    void ctx.fns.h2.wsSelfCheck({ port, servername: hasTsCert ? tsName ?? undefined : undefined })
+        .then((r) => r.ok
+            ? ctx.fns.procs.log.info({ event: "h2.ws-ok", msg: `WebSocket upgrade through https port ${port}: ${r.detail}` })
+            : ctx.fns.procs.log.warn({ event: "h2.ws-blocked", msg: `WebSocket upgrade through https port ${port} failed: ${r.detail} — live view and other $ws_ endpoints will not work on this address` }))
+        .catch(() => {});
     return { server, port, tsName: hasTsCert ? tsName : null, redirect: on(cfg.redirect) };
 }
 

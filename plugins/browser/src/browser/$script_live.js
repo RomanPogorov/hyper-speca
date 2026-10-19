@@ -7,7 +7,7 @@
     const tabs = $("lv-tabs"), address = $("lv-address"), status = $("lv-status");
     const params = new URLSearchParams(location.search);
     let target = params.get("target") || "";
-    let ws = null, meta = null, decoding = false, latest = null, retry = 500, lastError = "";
+    let ws = null, meta = null, decoding = false, latest = null, retry = 500, lastError = "", opened = false;
 
     const setStatus = (text, cls) => { status.textContent = text; status.dataset.state = cls || ""; };
     const send = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
@@ -19,12 +19,16 @@
         if (params.get("cdp")) q.set("cdp", params.get("cdp"));
         ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/browser/live/socket?${q}`);
         ws.binaryType = "arraybuffer";
+        opened = false;
         setStatus("connecting…", "wait");
-        ws.onopen = () => { retry = 500; lastError = ""; setStatus("live", "ok"); sendView(); };
+        ws.onopen = () => { opened = true; retry = 500; lastError = ""; setStatus("live", "ok"); sendView(); };
         ws.onclose = (e) => {
             if (e.code === 4000) { setStatus("stopped — reload the page to view again", "bad"); return; }
             // The server explains a failed attach in an error message before closing; keep it visible.
-            const why = lastError || (e.reason ? "disconnected: " + e.reason : "disconnected");
+            // Never opened and no server message: the handshake itself was refused on the way
+            // (a proxy or an HTTPS port without HTTP/1.1), not a Chrome problem.
+            const why = lastError || (e.reason ? "disconnected: " + e.reason
+                : opened ? "disconnected" : `WebSocket blocked: the connection to ${location.host} never opened (refused by the server, a proxy, or an HTTPS port without HTTP/1.1)`);
             setStatus(`${why} — retrying`, "bad");
             setTimeout(connect, retry);
             retry = Math.min(retry * 2, 8000);
