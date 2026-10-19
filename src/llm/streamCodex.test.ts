@@ -2,6 +2,7 @@ import { test, expect, describe, afterEach } from "bun:test";
 import stream from "./streamCodex";
 import parseSSE from "./parseSSE";
 import toCodexInput from "./toCodexInput";
+import classifyError from "./classifyError";
 
 // Offline: drive streamCodex through the shared parseSSE with a mocked fetch and
 // a stubbed refreshCodex returning a fake JWT carrying a chatgpt_account_id
@@ -35,6 +36,7 @@ function mkCtx(): Context {
             parseSSE: (opts: any) => parseSSE(ctx, null, opts),
             connectFetch: (o: any) => fetch(o.url, o.init),
             codexCliVersion: async () => "0.0.0-test",
+            classifyError: (opts: any) => classifyError(ctx, null, opts),
         },
     };
     return ctx as unknown as Context;
@@ -77,5 +79,24 @@ describe("streamCodex — offline (mocked fetch + shared parseSSE)", () => {
         const res = await stream(mkCtx(), null, { agent: agent() });
         expect(res.text).toBe("out");
         expect(res.thinking).toBe("think");
+    });
+
+    test("an in-stream 'overloaded' error is a classified transient failure, not an opaque one", async () => {
+        globalThis.fetch = (async () => sseResponse(
+            'data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}\n\n',
+        )) as any;
+        const error: any = await stream(mkCtx(), null, { agent: agent() }).catch(e => e);
+        expect(error.failure?.kind).toBe("transient");
+        expect(error.failure?.retryable).toBe(true);
+        expect(error.message).toContain("overloaded");
+    });
+
+    test("an in-stream invalid request stays fatal with the provider message", async () => {
+        globalThis.fetch = (async () => sseResponse(
+            'data: {"type":"response.failed","response":{"error":{"code":"invalid_prompt","message":"Invalid prompt"}}}\n\n',
+        )) as any;
+        const error: any = await stream(mkCtx(), null, { agent: agent() }).catch(e => e);
+        expect(error.failure?.retryable).toBe(false);
+        expect(error.message).toBe("codex response.failed: Invalid prompt");
     });
 });

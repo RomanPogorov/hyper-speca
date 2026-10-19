@@ -216,6 +216,50 @@ describe('agent.workerLoop', () => {
         expect(row.next_run_at).toBeNull();                       // not rescheduled
         expect(row.last_processed_msg_idx).toBe(beforeCursor);    // cursor preserved
     }, 5_000);
+
+    test('transient failures retry with growing backoff up to the configured count, then stop', async () => {
+        const ctx: any = await mkTestCtx();
+        ctx.fns.agent.workerLoop = workerLoop;
+        ctx.fns.agent.wakeWorker = wakeWorker;
+        await ctx.fns.settings.set({ module: 'agent', scopeType: 'global', key: 'transientRetries', value: 2 });
+        await ctx.fns.settings.set({ module: 'agent', scopeType: 'global', key: 'transientRetryBaseMs', value: 1000 });
+        await seedReadyAgent(ctx, 'ovl', Date.now() - 100);
+        await ctx.fns.session.appendMessage({ id: 'ovl', message: { role: 'user', content: 'hi' } });
+        let runs = 0;
+        ctx.fns.agent.run = async () => {
+            runs++;
+            const e: any = new Error('codex: temporary failure — retry: Our servers are currently overloaded. Please try again later.');
+            e.failure = { kind: 'transient', provider: 'codex', account: 'default', retryable: true, retryAfterMs: 1_000, message: e.message };
+            throw e;
+        };
+        const readDelay = async (from: number) => {
+            const [row] = await ctx.fns.procs.db.select({ sql: 'SELECT next_run_at FROM agents WHERE id = ?', params: ['ovl'] });
+            return row.next_run_at == null ? null : Number(row.next_run_at) - from;
+        };
+        const pass = async () => {
+            const from = Date.now();
+            const loop = workerLoop(ctx, null);
+            await Bun.sleep(120);
+            (ctx.state as any).workerLoopRunning = false;
+            wakeWorker(ctx, null);
+            await loop;
+            return from;
+        };
+        const due = () => ctx.fns.procs.db.run({ sql: 'UPDATE agents SET next_run_at = ? WHERE id = ?', params: [Date.now() - 1, 'ovl'] });
+
+        const d1 = await readDelay(await pass());
+        expect(d1).toBeGreaterThanOrEqual(900);   // first step: base (1s)
+        expect(d1).toBeLessThan(2_000);
+        await due();
+        const d2 = await readDelay(await pass());
+        expect(d2).toBeGreaterThanOrEqual(2_800); // second step: base × 3
+        expect(d2).toBeLessThan(4_000);
+        await due();
+        expect(await readDelay(await pass())).toBeNull(); // attempts spent: left to the person
+        expect(runs).toBe(3);
+        const events = await ctx.fns.procs.db.select({ sql: `SELECT payload FROM events WHERE agent_id = ? AND type = 'error' ORDER BY idx`, params: ['ovl'] });
+        expect(events.map((e: any) => (typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload).error).filter((t: string) => t.startsWith('automatic retry'))).toEqual(['automatic retry 1/2 in 1s', 'automatic retry 2/2 in 3s']);
+    }, 10_000);
     test('claims a second agent when it becomes due during another run', async () => {
         const ctx: any = await mkTestCtx();
         ctx.fns.agent.workerLoop = workerLoop;

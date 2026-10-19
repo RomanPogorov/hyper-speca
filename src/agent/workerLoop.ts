@@ -13,6 +13,8 @@
 // State on the agents row:
 //   next_run_at + run_state + last_processed_msg_idx (cursor over USER msgs)
 const MAX_IDLE_MS = 30_000;
+// Upper bound of one transient-failure backoff step, whatever the base setting.
+const MAX_RETRY_DELAY_MS = 15 * 60_000;
 
 function isAbortError(error: any) {
     const msg = String(error?.message ?? error ?? '');
@@ -238,9 +240,12 @@ async function runOne(ctx: Context, agentId: string, runToken: string): Promise<
             return;
         }
 
-        // One automatic retry for TRANSIENT failures (stalled stream, 5xx,
-        // dropped connection): reschedule once with a short backoff. Anything
-        // else — and a second failure in a row — stays manual (statusbar badge).
+        // TRANSIENT failures (overloaded provider, stalled stream, 5xx, dropped
+        // connection) are retried automatically with exponential backoff:
+        // base × 3^n (10s, 30s, 90s, … capped), never sooner than the provider's
+        // Retry-After. The attempt count and base delay are settings
+        // (agent.transientRetries, agent.transientRetryBaseMs). Anything else —
+        // and the last failed attempt — stays manual (statusbar badge).
         //
         // A spent subscription window is never transient: retrying it costs a
         // round-trip per agent and cannot succeed before the quota resets. Such
@@ -258,14 +263,21 @@ async function runOne(ctx: Context, agentId: string, runToken: string): Promise<
         } else {
             const transient = failure
                 ? failure.retryable
-                : !!errorText && /stalled|429|(?:^|\D)5\d\d(?:\D|$)|connection (?:was )?closed|ConnectionRefused|network|ETIMEDOUT|ECONNRESET|timed? ?out/i.test(errorText);
+                : !!errorText && /stalled|overloaded|try again later|429|(?:^|\D)5\d\d(?:\D|$)|connection (?:was )?closed|ConnectionRefused|network|ETIMEDOUT|ECONNRESET|timed? ?out/i.test(errorText);
+            const maxRetries = Number(await ctx.fns.settings.getNumber({ module: 'agent', scopeType: 'global', key: 'transientRetries', fallback: 4 }));
+            const done = retries[agentId] ?? 0;
             if (!errorText) delete retries[agentId];
-            else if (transient && (retries[agentId] ?? 0) < 1) {
-                retries[agentId] = (retries[agentId] ?? 0) + 1;
+            else if (transient && done < maxRetries) {
+                retries[agentId] = done + 1;
+                const baseMs = Number(await ctx.fns.settings.getNumber({ module: 'agent', scopeType: 'global', key: 'transientRetryBaseMs', fallback: 10_000 }));
+                const delayMs = Math.max(1_000, Number(failure?.retryAfterMs ?? 0), Math.min(baseMs * 3 ** done, MAX_RETRY_DELAY_MS));
                 await ctx.fns.procs.db.run({
                     sql: 'UPDATE agents SET next_run_at = COALESCE(next_run_at, ?) WHERE id = ?',
-                    params: [ts + Math.max(1_000, Number(failure?.retryAfterMs ?? 10_000)), agentId],
+                    params: [ts + delayMs, agentId],
                 });
+                try { await ctx.fns.session.appendErrorEvent({ id: agentId, error: `automatic retry ${done + 1}/${maxRetries} in ${Math.round(delayMs / 1000)}s`, ts: Date.now() }); } catch {}
+            } else if (transient) {
+                delete retries[agentId];
             }
         }
 

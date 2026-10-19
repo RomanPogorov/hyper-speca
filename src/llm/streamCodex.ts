@@ -148,13 +148,17 @@ export default async function (
             const stop = ev.response?.incomplete_details?.reason;
             if (stop === "max_output_tokens") finishReason = "length";
         } else if (t === "response.failed" || t === "error") {
-            const msg =
-                ev.response?.error?.message ??
-                ev.error?.message ??
-                ev.message ??
-                ev.code ??
-                JSON.stringify(ev);
-            throw new Error(`codex ${t}: ${msg}`);
+            // The backend can accept the request (200) and fail inside the
+            // stream — "Our servers are currently overloaded", server_error,
+            // a spent plan. Classify it like an HTTP failure so workerLoop can
+            // back off, park or give up instead of seeing an opaque Error.
+            const err = ev.response?.error ?? ev.error ?? ev;
+            const msg = err?.message ?? ev.message ?? ev.code ?? JSON.stringify(ev);
+            const info = ctx.fns.llm.classifyError({
+                provider: ep.provider, account: ep.account, kind: ep.kind,
+                body: JSON.stringify({ error: { ...err, message: msg } }),
+            });
+            throw failure({ ...info, message: info.kind === "fatal" ? `codex ${t}: ${msg}` : `${info.message}: ${msg}` });
         }
     }
 
