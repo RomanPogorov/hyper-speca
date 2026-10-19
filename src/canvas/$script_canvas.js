@@ -102,6 +102,34 @@
         try { state = JSON.parse(text) || {}; } catch {}
         deliver(frame, state);
     };
+    // ── url tabs: with the canvas-frames extension the framed site reports where it is now ─────────
+    // (extensions/canvas-frames/frame.js). The address bar follows it and the tab remembers the address
+    // in its state, so a reload opens the same page. Trusted by source window: a url tab's frame here.
+    window.addEventListener('message', event => {
+        const msg = event.data;
+        if (!msg || msg.hyperFrames !== 1 || msg.type !== 'location') return;
+        const root = page();
+        const frame = root && [...root.querySelectorAll('[data-canvas-body][data-canvas-kind="url"] iframe[data-canvas-url-frame]')].find(f => f.contentWindow === event.source);
+        if (!frame) return;
+        let url;
+        try { url = new URL(String(msg.url)); } catch { return; }
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
+        const body = frame.closest('[data-canvas-body]');
+        const itemId = body?.getAttribute('data-canvas-item');
+        const form = body?.querySelector('[data-canvas-navigate]');
+        if (!itemId || !form) return;
+        const input = form.querySelector('input[name="url"]');
+        if (input && document.activeElement !== input) input.value = url.href;
+        form.querySelectorAll('a[target="_blank"]').forEach(a => { a.href = url.href; });
+        const seen = url.href + '\n' + String(msg.title || '');
+        if (frame.getAttribute('data-canvas-url-at') === seen) return;
+        frame.setAttribute('data-canvas-url-at', seen);
+        fetch(`/canvas/${encodeURIComponent(agentOf(root))}/item/${encodeURIComponent(itemId)}`, {
+            method: 'POST', headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ state: { url: url.href, title: String(msg.title || '').slice(0, 200) || null, from: form.getAttribute('data-canvas-url-from') } }),
+        }).catch(() => {});
+    });
+
     window.addEventListener('message', event => {
         const msg = event.data;
         if (!msg || msg.hyperCanvas !== 1) return;

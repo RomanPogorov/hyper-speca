@@ -35,3 +35,33 @@ test("a url tab for a site that forbids framing offers the extension download ne
     expect(html).toContain("Open in a new tab");
     expect(html).toContain("html[data-hyper-frames] .hyper-url-notice{display:none}");
 });
+
+test("a url tab follows the address the extension reported, until the tab is pointed somewhere else", () => {
+    const ctx: any = { fns: { procs: { ui: { escape: ({ text }: { text: string }) => Bun.escapeHTML(text) } } } };
+    const opened = "https://www.google.com/";
+    const moved = "https://www.google.com/search?q=hyper";
+    const item: any = { id: 1, title: "google.com", args: { url: opened, embeddable: false }, state: { url: moved, title: "hyper - Google", from: opened } };
+    const html = String(urlKind.render(ctx, { agentId: "a", item }));
+    expect(html).toContain(`<iframe src="${Bun.escapeHTML(moved)}"`);
+    expect(html).toContain(`value="${Bun.escapeHTML(moved)}"`);
+    expect(html).toContain(`data-canvas-url-from="${opened}"`);
+    expect(String(urlKind.describe!(ctx, { item }))).toContain(`now at ${moved}`);
+
+    // The address bar or the agent pointed the tab elsewhere: the old report no longer applies.
+    const renavigated: any = { ...item, args: { url: "https://example.com/", embeddable: true } };
+    const again = String(urlKind.render(ctx, { agentId: "a", item: renavigated }));
+    expect(again).toContain('<iframe src="https://example.com/"');
+    expect(again).not.toContain("search?q=hyper");
+});
+
+test("the extension reports frame navigation only from frames directly inside a Hyper page", async () => {
+    const ctx: any = await mkTestCtx();
+    const dir = join(ctx.fns.procs.project.projectRoot({}), "extensions", "canvas-frames");
+    const manifest = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8"));
+    const frameScript = manifest.content_scripts.find((c: any) => c.js.includes("frame.js"));
+    expect(frameScript.all_frames).toBe(true);
+    const source = await readFile(join(dir, "frame.js"), "utf8");
+    expect(source).toContain("window.parent !== window.top");
+    expect(source).toContain("ancestorOrigins");
+    expect(source).toContain("hyperFrames: 1");
+}, 30_000);
