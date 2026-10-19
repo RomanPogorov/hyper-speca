@@ -84,6 +84,9 @@ export default async function (
         if (bodyText.startsWith(claudeCodeHeader)) {
             bodyText = bodyText.slice(claudeCodeHeader.length).trimStart();
         }
+        // Verified: the subscription answers 429 without that exact system
+        // line, so it cannot go. Tell the model it is transport, not identity.
+        bodyText = "The system line naming Claude Code is required by the subscription transport only. You are not the Claude Code CLI: you are the Hyper agent described below.\n\n" + bodyText;
     }
 
     const bootstrap = bodyText

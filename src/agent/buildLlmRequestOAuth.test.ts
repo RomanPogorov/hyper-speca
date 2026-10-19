@@ -23,7 +23,9 @@ describe("buildLlmRequest OAuth identity", () => {
     test("managed OAuth keeps exact Claude identity in system", async () => {
         const result = await build(ctx("anthropic-oauth"), null, { agent: { model: "anthropic-oauth:claude-x", messages: [], scratchpad: {} } as any });
         expect(result.system).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
-        expect(result.messages[0].content).toBe("runtime instructions");
+        // The identity line is transport only: the body says so before the instructions.
+        expect(result.messages[0].content).toStartWith("The system line naming Claude Code is required by the subscription transport only.");
+        expect(result.messages[0].content).toEndWith("\n\nruntime instructions");
     });
 
     test("API-key Anthropic keeps system-as-messages policy", async () => {
