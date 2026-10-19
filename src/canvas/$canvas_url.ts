@@ -63,7 +63,16 @@ ${frame("hyper-url-frame")}
   <div class="text-base font-medium">${esc(new URL(url).hostname)} does not allow embedding in another page</div>
   <div class="max-w-md text-sm text-faint">${esc(String(a.reason ?? ""))}</div>
   <a href="${esc(url)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm">Open in a new tab</a>
-  <div class="max-w-md text-xs text-faint">To open these sites here, install the Hyper canvas frames extension (extensions/canvas-frames directory).</div>
+  <div class="mt-4 max-w-md rounded-lg border border-ui-border p-4 text-left text-sm">
+    <div class="font-medium">Show such sites right here</div>
+    <div class="mt-1 text-faint">Install the Hyper canvas frames extension for Chrome. Inside Hyper tabs only, it lets pages that forbid embedding open in the canvas.</div>
+    <ol class="mt-2 list-decimal space-y-0.5 pl-5 text-faint">
+      <li><a href="/canvas/framesExtension.zip" download class="link">Download the extension</a> and unzip it.</li>
+      <li>Open <code>chrome://extensions</code> and turn on Developer mode.</li>
+      <li>Load unpacked → choose the <code>hyper-canvas-frames</code> folder, then reload this page.</li>
+    </ol>
+    <a href="/canvas/framesExtension.zip" download class="btn btn-sm btn-primary mt-3"><i class="ph ph-download-simple" aria-hidden="true"></i> Download extension</a>
+  </div>
 </div>`);
         }
         return wrap(frame("block"));
