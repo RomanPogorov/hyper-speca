@@ -28,15 +28,7 @@ async function tailwindCli(framework: string): Promise<string> {
     return join(dirname(pkgPath), bin);
 }
 
-/**
- * Compiles one module stylesheet with Tailwind and returns the served CSS file path
- *
- * Wraps a `$style_<name>.css` input with the Tailwind import, the typography plugin and a source line per scanned module root, then runs the Tailwind CLI on the same bun binary as the server (never a node or bunx from PATH). Builds once per process unless forced; a failed build keeps serving the last good stylesheet (from this run or, after a restart, the previous one) and logs a warning; it throws only when no stylesheet was ever built.
- * @param opts.abs Absolute path of the `$style_<name>.css` source file to compile.
- * @param opts.key Stable file-safe identifier of the stylesheet, used for the cached input and output file names.
- * @param opts.force Rebuild even when this process already compiled the stylesheet. @default false
- */
-export default async function (ctx: Context, _session: Session | null, opts: {
+async function compile(ctx: Context, opts: {
     /** Absolute path of the `$style_<name>.css` source file to compile. */
     abs: string;
     /** Stable file-safe identifier of the stylesheet, used for the cached input and output file names. */
@@ -108,4 +100,31 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     }
     if (record) record.built = output;
     return output;
+}
+
+/**
+ * Compiles one module stylesheet with Tailwind and returns the served CSS file path
+ *
+ * Wraps a `$style_<name>.css` input with the Tailwind import, the typography plugin and a source line per scanned module root, then runs the Tailwind CLI on the same bun binary as the server (never a node or bunx from PATH). Builds once per process unless forced; a failed build keeps serving the last good stylesheet (from this run or, after a restart, the previous one) and logs a warning; it throws only when no stylesheet was ever built.
+ * @param opts.abs Absolute path of the `$style_<name>.css` source file to compile.
+ * @param opts.key Stable file-safe identifier of the stylesheet, used for the cached input and output file names.
+ * @param opts.force Rebuild even when this process already compiled the stylesheet. @default false
+ */
+export default async function (ctx: Context, _session: Session | null, opts: {
+    /** Absolute path of the `$style_<name>.css` source file to compile. */
+    abs: string;
+    /** Stable file-safe identifier of the stylesheet, used for the cached input and output file names. */
+    key: string;
+    /** Rebuild even when this process already compiled the stylesheet. @default false */
+    force?: boolean;
+}): Promise<string> {
+    // hyper-code2: builds of one stylesheet run one at a time. Every dev.sync forces a rebuild of
+    // every sheet, and each build is a Tailwind process scanning the whole workspace: a burst of
+    // saves started ~30 of them at once and took the machine to load 400. Queued behind the
+    // running build, a forced call compiles once more after it; a plain request finds the fresh
+    // sheet in the cache.
+    const queue = ((ctx.state.procs as any).stylesBuilds ??= {}) as Record<string, Promise<string>>;
+    const run = (queue[opts.key] ?? Promise.resolve("")).catch(() => "").then(() => compile(ctx, opts));
+    queue[opts.key] = run;
+    return run;
 }
