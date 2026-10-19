@@ -36,6 +36,8 @@ let shared: Promise<string | null> | undefined;
 
 export function testChrome(): Promise<string | null> {
     return shared ??= (async () => {
+        // TEST_CHROME=off: no browser for this run (a machine where Chrome cannot run or its port is unreachable).
+        if (process.env.TEST_CHROME === "off") return null;
         const port = Number(process.env.TEST_CHROME_PORT) || 59222;
         const url = `http://127.0.0.1:${port}`;
         if (await up(url)) return url;
@@ -50,8 +52,17 @@ export function testChrome(): Promise<string | null> {
             stdin: "ignore", stdout: "ignore", stderr: "ignore",
         });
         p.unref();
-        for (let i = 0; i < 1000; i++) {
+        // Up to 10 s for Chrome to answer. A Chrome that exits at once could not bind the port: another
+        // worker won the race (it answers soon) or the port is taken by something we cannot reach — then
+        // give it one second and stop, instead of polling a dead port for the whole budget.
+        const deadline = Date.now() + 10_000;
+        let exitedAt = 0;
+        while (Date.now() < deadline) {
             if (await up(url)) return url;
+            if (p.exitCode !== null) {
+                exitedAt ||= Date.now();
+                if (Date.now() - exitedAt > 1000) return null;
+            }
             await Bun.sleep(10);
         }
         return null;
