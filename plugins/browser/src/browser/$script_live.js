@@ -7,7 +7,7 @@
     const tabs = $("lv-tabs"), address = $("lv-address"), status = $("lv-status");
     const params = new URLSearchParams(location.search);
     let target = params.get("target") || "";
-    let ws = null, meta = null, decoding = false, latest = null, retry = 500;
+    let ws = null, meta = null, decoding = false, latest = null, retry = 500, lastError = "";
 
     const setStatus = (text, cls) => { status.textContent = text; status.dataset.state = cls || ""; };
     const send = (m) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); };
@@ -20,10 +20,12 @@
         ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/browser/live/socket?${q}`);
         ws.binaryType = "arraybuffer";
         setStatus("connecting…", "wait");
-        ws.onopen = () => { retry = 500; setStatus("live", "ok"); sendView(); };
+        ws.onopen = () => { retry = 500; lastError = ""; setStatus("live", "ok"); sendView(); };
         ws.onclose = (e) => {
             if (e.code === 4000) { setStatus("stopped — reload the page to view again", "bad"); return; }
-            setStatus(`disconnected${e.reason ? ": " + e.reason : ""} — retrying`, "bad");
+            // The server explains a failed attach in an error message before closing; keep it visible.
+            const why = lastError || (e.reason ? "disconnected: " + e.reason : "disconnected");
+            setStatus(`${why} — retrying`, "bad");
             setTimeout(connect, retry);
             retry = Math.min(retry * 2, 8000);
         };
@@ -38,7 +40,7 @@
                 const u = new URL(location.href); u.searchParams.set("target", m.id); history.replaceState(null, "", u);
             } else if (m.t === "nav") { if (document.activeElement !== address) address.value = m.url || ""; }
             else if (m.t === "profile") quality.title = `${m.mode} · JPEG ${m.quality}${m.maxWidth ? ` · ≤${m.maxWidth}×${m.maxHeight}` : ""}`;
-            else if (m.t === "error") setStatus(m.message, "bad");
+            else if (m.t === "error") { lastError = m.message; setStatus(m.message, "bad"); }
         };
     }
 

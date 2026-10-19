@@ -27,6 +27,12 @@ export default async function (
         `--profile-directory=${profile}`,
         "--no-first-run",
         "--no-default-browser-check",
+        // A Chrome started for another macOS user than the one at the console is a
+        // background app: App Nap and Chrome's own throttling then stall DevTools
+        // for ~10 s per request. Keep timers and renderers running.
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-backgrounding-occluded-windows",
     ];
     // An unpacked extension is optional: enterprise-managed profiles refuse it
     // by policy, and Chrome then starts fine without the side panel.
@@ -40,6 +46,11 @@ export default async function (
         event: "chrome.start",
         msg: `port ${port}, profile "${profile}" in ${userDataDir}${legacy ? " (legacy uniskill location)" : ""}`,
     });
+
+    // App Nap ignores the flags above; opt Chrome out of it (macOS only, harmless if already set).
+    if (process.platform === "darwin") {
+        await Bun.$`defaults write com.google.Chrome NSAppSleepDisabled -bool YES`.quiet().nothrow();
+    }
 
     const quoted = args.map(a => `'${String(a).replace(/'/g, "'\\''")}'`).join(" ");
     await Bun.$`tmux kill-session -t ${tmuxSession}`.quiet().nothrow();

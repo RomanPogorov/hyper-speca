@@ -53,7 +53,12 @@ export default async function (
     const browserUrl = opts.browserUrl.replace(/\/$/, "");
     const quality = Math.max(10, Math.min(100, Math.trunc(opts.quality ?? 70)));
     const focusEmulation = opts.focusEmulation !== false;
-    const version: any = await (await fetch(`${browserUrl}/json/version`, { signal: AbortSignal.timeout(5000) })).json();
+    // A slow Chrome (App Nap, heavy tabs) answers DevTools in seconds; wait up to 15 s
+    // and then say plainly that Chrome is the problem, not the connection to Hyper.
+    const notResponding = (what: string) => new Error(`Chrome is not responding (${what} at ${browserUrl}) — restart it with chrome.start`);
+    const version: any = await fetch(`${browserUrl}/json/version`, { signal: AbortSignal.timeout(15000) })
+        .then((r) => r.json())
+        .catch((e: any) => { throw e?.name === "TimeoutError" ? notResponding("no answer in 15 s") : notResponding(e?.message ?? String(e)); });
     // Chrome reports its socket under the address it listens on; reach it under the one we were given.
     const wsUrl = new URL(String(version.webSocketDebuggerUrl));
     const base = new URL(browserUrl);
@@ -63,9 +68,9 @@ export default async function (
 
     const cdp = new WebSocket(wsUrl.toString());
     await new Promise<void>((ok, fail) => {
-        const timer = setTimeout(() => fail(new Error(`CDP ${wsUrl} did not open`)), 5000);
+        const timer = setTimeout(() => fail(notResponding("DevTools socket did not open in 15 s")), 15000);
         cdp.onopen = () => { clearTimeout(timer); ok(); };
-        cdp.onerror = () => { clearTimeout(timer); fail(new Error(`CDP ${wsUrl} failed`)); };
+        cdp.onerror = () => { clearTimeout(timer); fail(notResponding("DevTools socket failed")); };
     });
 
     let nextId = 0;
