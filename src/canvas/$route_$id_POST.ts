@@ -29,14 +29,25 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
         try { await ctx.fns.canvas.reopen({ agentId, itemId: reopenItemId }); }
         catch (error: any) { return new Response(String(error?.message ?? error), { status: 404 }); }
     }
-    // A link clicked in the chat: only the file and url kinds, whose prepare() checks the target — a
-    // browser request must not open arbitrary kinds (html runs code, plugin kinds may read private data).
+    // A link clicked in the chat or opened as a new canvas tab from inside one (docs/canvas-links.md): only the
+    // file, url and view kinds, whose prepare() checks the target — a browser request must not open arbitrary
+    // kinds (html runs code, plugin kinds may read private data); a view is a `@view` address, read-only, and
+    // rpc.render checks the person may call it. A site that forbids framing, asked with `fallback: "browser"`
+    // (no frames extension in that browser), opens no tab: the answer says { browser: url } and the page opens it.
     if (body.show && typeof body.show === "object") {
         const kind = String(body.show.kind ?? "");
-        if (kind !== "file" && kind !== "url") return new Response("show: only file and url links open from the chat", { status: 400 });
-        const args = kind === "file" ? { path: String(body.show.args?.path ?? "") } : { url: String(body.show.args?.url ?? "") };
-        try { await ctx.fns.canvas.show({ agentId, kind, args }); }
-        catch (error: any) { return new Response(String(error?.message ?? error), { status: 400 }); }
+        if (kind !== "file" && kind !== "url" && kind !== "view") return new Response("show: only file, url and view links open from a page", { status: 400 });
+        const a = body.show.args ?? {};
+        const tab = ["preview", "code", "edit"].includes(a.tab) ? a.tab : undefined;
+        const args = kind === "file" ? { path: String(a.path ?? ""), ...(a.host ? { host: String(a.host) } : {}), ...(tab ? { tab } : {}) } : { url: String(a.url ?? "") };
+        try {
+            if (kind === "url" && body.show.fallback === "browser") {
+                const urlKind = ((ctx.state as any).canvas?.kinds ?? {}).url as types.canvas.Registered | undefined;
+                const checked = urlKind?.prepare ? await urlKind.prepare(ctx, { agentId, args }) : null;
+                if (checked && checked.args.embeddable === false) return Response.json({ browser: String(checked.args.url) });
+            }
+            await ctx.fns.canvas.show({ agentId, kind, args });
+        } catch (error: any) { return new Response(String(error?.message ?? error), { status: 400 }); }
         body.open = true;
     }
     // The address bar of a url tab: the same prepare() check as a new url tab, in place.
@@ -46,7 +57,8 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
         const f = body.navigate.file;
         const file = f && typeof f === "object" ? { path: String(f.path ?? ""), host: f.host ? String(f.host) : undefined, tab: (["preview", "code", "edit"].includes(f.tab) ? f.tab : "") as "" | "preview" | "code" | "edit" } : undefined;
         const history = body.navigate.history === "back" || body.navigate.history === "forward" ? body.navigate.history : undefined;
-        try { await ctx.fns.canvas.navigate({ agentId, itemId, ...(file ? { file } : history ? { history } : { url: String(body.navigate.url ?? "") }) }); }
+        const replace = body.navigate.replace === true;
+        try { await ctx.fns.canvas.navigate({ agentId, itemId, ...(replace ? { replace } : {}), ...(file ? { file } : history ? { history } : { url: String(body.navigate.url ?? "") }) }); }
         catch (error: any) { return new Response(String(error?.message ?? error), { status: 400 }); }
     }
     const open = typeof body.open === "boolean" ? body.open : body.open === "1" || body.open === "true" ? true : body.open === "0" || body.open === "false" ? false : undefined;

@@ -7,7 +7,7 @@
  *
  * Use from a `@view` function whose content is an interactive app: give `src` (a same-origin page, usually the
  * module's own route in embed mode) or `srcdoc` (a self-contained document, sandboxed). In a canvas tab the
- * framed page may post `{ hyperCanvas: 1, type: "navigate", params }` to its parent to move the tab to the same
+ * framed page may post `{ hyperCanvas: 1, type: "navigate", params, replace? }` to its parent to move the tab to the same
  * view with other params (its address and ◀ ▶ history follow).
  * @param opts.src Same-origin page address (starts with `/`).
  * @param opts.srcdoc A whole html document instead of src; always sandboxed.

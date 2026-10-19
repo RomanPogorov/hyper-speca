@@ -88,6 +88,28 @@ describe("canvas = url", () => {
         expect(html).toContain('data-canvas-step="back"');
     });
 
+    test("links (docs/canvas-links.md): replace moves a view tab without a history step; a view link opens a new tab from a page", async () => {
+        const a = ctx.fns.rpc.url({ fn: "memory.view", params: { key: "notes/a.md" } });
+        const b = ctx.fns.rpc.url({ fn: "memory.view", params: { key: "notes/b.md" } });
+        const tab = await r.fns.canvas.show({ agentId, kind: "view", title: "links", args: { url: a } });
+        const before = await r.fns.canvas.navigate({ agentId, itemId: tab.id, url: a });
+        const replaced = await r.fns.canvas.navigate({ agentId, itemId: tab.id, url: b, replace: true });
+        expect(replaced.args.url).toBe(b);
+        expect(replaced.state.back ?? []).toEqual(before.state.back ?? []);
+        const post = (body: any) => ctx.fns.procs.http.dispatch({ method: "POST", url: `http://localhost/canvas/${agentId}`, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+        // From the page over HTTP the same: navigate.replace keeps the history as it was.
+        expect((await post({ navigate: { itemId: tab.id, url: a, replace: true } })).status).toBe(200);
+        const after = (await ctx.fns.canvas.list({ agentId })).find((i: any) => i.id === tab.id);
+        expect(after.args.url).toBe(a);
+        expect(after.state.back ?? []).toEqual(before.state.back ?? []);
+        // Cmd-click on a /rpc link: show { kind: "view" } opens (or switches to) a view tab.
+        const c = ctx.fns.rpc.url({ fn: "memory.table", params: {} });
+        expect((await post({ show: { kind: "view", args: { url: c } } })).status).toBe(200);
+        const opened = (await ctx.fns.canvas.list({ agentId })).filter((i: any) => i.kind === "view" && i.args.url === c);
+        expect(opened.length).toBe(1);
+        expect((await post({ show: { kind: "view", args: { url: "/rpc/memory.list" } } })).status).toBe(400);
+    });
+
     test("memory.view renders a note with [[links]] as view links, records as data; memory.table lists them", async () => {
         const as = Object.create(ctx); as.session = { kind: "agent", agentId };
         const note: string = await as.fns.memory.view({ key: "notes/a.md" });

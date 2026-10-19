@@ -6,6 +6,7 @@
  * @param opts.url New address for a url tab (http/https, a bare host like example.com gets https://) or a view tab (`/rpc/<fn>?<json>`).
  * @param opts.file New target for a file tab: path (absolute or workspace-relative), host alias, and the Files view tab.
  * @param opts.history For a view tab: go to the previous or next address of its history instead of a new one.
+ * @param opts.replace For a view tab: show the new address in place of the current one, without a history step — for a page changing its own filter, sort or selection. @default false
  * @param opts.agentId Agent whose canvas it is; defaults to the current agent.
  */
 export default async function (
@@ -20,6 +21,8 @@ export default async function (
         file?: { path: string; host?: string; tab?: "" | "preview" | "code" | "edit" };
         /** For a view tab: go to the previous or next address of its history instead of a new one. */
         history?: "back" | "forward";
+        /** For a view tab: show the new address in place of the current one, without a history step — for a page changing its own filter, sort or selection. @default false */
+        replace?: boolean;
         /** Agent whose canvas it is; defaults to the current agent. */
         agentId?: string;
     },
@@ -32,7 +35,7 @@ export default async function (
     if (opts.file && current.kind === "view") {
         const host = opts.file.host && opts.file.host !== "local" ? opts.file.host : undefined;
         const url = ctx.fns.rpc.url({ fn: "files.page", params: { path: opts.file.path, ...(host ? { host } : {}), ...(opts.file.tab ? { tab: opts.file.tab } : {}) } });
-        return ctx.fns.canvas.navigate({ agentId, itemId, url });
+        return ctx.fns.canvas.navigate({ agentId, itemId, url, ...(opts.replace ? { replace: true } : {}) });
     }
     const target = opts.file ? "file" : current.kind === "view" ? "view" : "url";
     if (target !== current.kind) throw new Error(`canvas.navigate: tab ${itemId} is a ${current.kind} tab, not a ${target} tab`);
@@ -50,7 +53,7 @@ export default async function (
         const here = String(current.args.url ?? "");
         if (opts.history === "back") { if (!back.length) return current; url = back.pop(); forward = [here, ...forward].slice(0, 50); }
         else if (opts.history === "forward") { if (!forward.length) return current; url = forward.shift(); back = [...back, here].slice(-50); }
-        else { back = [...back, here].slice(-50); forward = []; }
+        else if (!opts.replace) { back = [...back, here].slice(-50); forward = []; }
     }
     const args = opts.file ? { path: opts.file.path, host: opts.file.host, tab: opts.file.tab } : { url };
     const prepared = await kind.prepare(ctx, { agentId, args });

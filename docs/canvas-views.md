@@ -22,6 +22,7 @@ the status); it is shared by the route and the canvas:
   so opening a tab is one round trip (it was three: POST, GET /panel, the view's own fetch). While a tab action is
   in flight the body is marked `aria-busy`: canvas.css hides the old content and shows a spinner and a top bar.
 - A fragment that needs isolated scripts carries its own `<iframe>`.
+- Where a link click opens (this tab with a history step, a new canvas tab, a new browser tab): [canvas-links.md](canvas-links.md).
 
 ## Plugin kinds are views
 

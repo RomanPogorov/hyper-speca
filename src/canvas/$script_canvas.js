@@ -144,7 +144,7 @@
         if (msg.type === 'navigate' && msg.params && typeof msg.params === 'object' && !Array.isArray(msg.params)) {
             const fn = frame.closest('[data-rpc-view]')?.getAttribute('data-rpc-view');
             if (body?.getAttribute('data-canvas-kind') === 'view' && fn) {
-                tabAction(root, { navigate: { itemId: Number(itemId), url: `/rpc/${fn}?${encodeURIComponent(JSON.stringify(msg.params))}` } });
+                tabAction(root, { navigate: { itemId: Number(itemId), ...(msg.replace === true ? { replace: true } : {}), url: `/rpc/${fn}?${encodeURIComponent(JSON.stringify(msg.params))}` } });
                 return;
             }
             msg.type = 'state'; msg.state = msg.params;
@@ -337,34 +337,10 @@
         },
         resync: catchUp,
     });
-    // Links in the chat open beside it instead of navigating the page away: a file link (/files/absolute/…,
-    // what the markdown renderer makes of a path) becomes a file tab, a web link a url tab. A modifier
-    // or middle click keeps the browser's own behaviour, and so does any link the server refuses.
-    document.addEventListener('click', event => {
-        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        const a = event.target.closest?.('#chat-panel .prose a[href]');
-        const root = page();
-        if (!a || !root || a.hasAttribute('download')) return;
-        const url = new URL(a.getAttribute('href'), location.href);
-        let show = null;
-        if (url.origin === location.origin && url.pathname.startsWith('/files/absolute/')) {
-            let path = '';
-            try { path = '/' + url.pathname.slice('/files/absolute/'.length).split('/').map(decodeURIComponent).join('/'); } catch { return; }
-            show = { kind: 'file', args: { path } };
-        } else if (url.origin !== location.origin && /^https?:$/.test(url.protocol)) {
-            show = { kind: 'url', args: { url: url.href } };
-        }
-        if (!show) return;
-        event.preventDefault();
-        fetch(`/canvas/${encodeURIComponent(agentOf(root))}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ show }) })
-            .then(r => r.ok ? r.json() : Promise.reject(r))
-            .then(state => { apply(root, state); if (state.rev && state.rev !== shownRev(root)) refreshPanel(root); })
-            .catch(() => window.open(a.href, '_blank', 'noopener'));
-    });
-
-    // A file tab draws the Files viewer in place (files.view), not in a frame. Its links — breadcrumbs,
-    // folder entries, Preview/Code/Edit — move this same tab; a modifier click keeps the browser's own
-    // behaviour (open the Files page). Raw media and PDF links are left alone.
+    // ── Links: where a click opens (docs/canvas-links.md) ──────────────────────────────────────────
+    // One target table for the chat and the tabs: a /rpc/<fn>?<json> address is a view tab, a Files address
+    // (/files/absolute|embed|remote/…) a file tab, an http(s) site a url tab; any other Hyper page has no
+    // canvas kind and goes to a new browser tab, so the chat is never navigated away.
     const filesTarget = href => {
         const url = new URL(href, location.href);
         if (url.origin !== location.origin) return null;
@@ -376,36 +352,91 @@
         } catch { return null; }
         return null;
     };
+    const canvasTarget = href => {
+        let u;
+        try { u = new URL(href, location.href); } catch { return null; }
+        if (u.origin === location.origin) {
+            if (u.pathname.startsWith('/rpc/')) return { kind: 'view', args: { url: u.pathname + u.search } };
+            const file = filesTarget(u.href);
+            return file ? { kind: 'file', args: file } : null;
+        }
+        return /^https?:$/.test(u.protocol) ? { kind: 'url', args: { url: u.href } } : null;
+    };
+    // How the person asked: the link's own data-canvas-open ("here" | "replace" | "tab" | "browser") wins,
+    // target=_blank means the browser, Cmd/Ctrl or the middle button a new canvas tab, a plain click "here".
+    const howOpen = (event, a) => {
+        const forced = a.getAttribute('data-canvas-open');
+        if (forced === 'here' || forced === 'replace' || forced === 'tab' || forced === 'browser') return forced;
+        if (a.target === '_blank') return 'browser';
+        return event.button === 1 || event.metaKey || event.ctrlKey ? 'tab' : 'here';
+    };
+    const openBrowser = href => window.open(new URL(href, location.href).href, '_blank', 'noopener');
+    // A new canvas tab (or the open one with the same address). A site that forbids framing, in a browser
+    // without the frames extension, would only show a notice: the server answers { browser } and it opens there.
+    const showTab = (root, show, href) => {
+        const ask = show.kind === 'url' && !document.documentElement.hasAttribute('data-hyper-frames') ? { ...show, fallback: 'browser' } : show;
+        acting++;
+        busy(root, true);
+        return fetch(`/canvas/${encodeURIComponent(agentOf(root))}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-canvas-panel': '1' }, body: JSON.stringify({ show: ask }) })
+            .then(r => r.ok ? r.json() : Promise.reject(r))
+            .then(state => {
+                if (state.browser) { openBrowser(state.browser); return; }
+                apply(root, state);
+                if (typeof state.panel === 'string') return refreshPanel(root, false, state.panel);
+                if (state.rev && state.rev !== shownRev(root)) return refreshPanel(root);
+            })
+            .catch(() => openBrowser(href))
+            .finally(() => { if (!--acting) busy(root, false); });
+    };
+    const plainHref = a => {
+        const href = a.getAttribute('href') || '';
+        return !href || href.startsWith('#') || /^(javascript|mailto|tel|data|blob):/i.test(href) || a.hasAttribute('download') ? null : href;
+    };
+
+    // In the chat: a plain click opens the link as a canvas tab (or switches to the tab already showing it).
+    // A modifier or middle click keeps the browser's own behaviour, and so does a link with no canvas kind.
     document.addEventListener('click', event => {
         if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        const a = event.target.closest?.('[data-canvas-files] a[href]');
+        const a = event.target.closest?.('#chat-panel .prose a[href]');
         const root = page();
-        if (!a || !root || !root.contains(a) || a.hasAttribute('download') || a.target === '_blank') return;
-        const target = filesTarget(a.getAttribute('href'));
-        if (!target) return;
+        if (!a || !root || a.target === '_blank' || a.getAttribute('data-canvas-open') === 'browser') return;
+        const href = plainHref(a);
+        const show = href && canvasTarget(href);
+        if (!show) return;
+        event.preventDefault();
+        showTab(root, show, href);
+    });
+
+    // Inside a tab (a view's fragment, the Files viewer): a plain click moves this tab and adds a history step;
+    // data-canvas-open="replace" moves it without one; Cmd/Ctrl/middle click opens a new canvas tab; an outside
+    // site opens a new canvas tab even on a plain click (it is not this tab's kind of address); target=_blank
+    // and data-canvas-open="browser" go to a new browser tab. Shift/Alt clicks stay the browser's.
+    const onTabLink = event => {
+        if (event.defaultPrevented || event.shiftKey || event.altKey || (event.button !== 0 && event.button !== 1)) return;
+        const a = event.target.closest?.('[data-canvas-body] a[href]');
+        const root = page();
+        if (!a || !root || !root.contains(a)) return;
+        const href = plainHref(a);
+        if (!href) return;
+        const how = howOpen(event, a);
+        if (how === 'browser' && a.target === '_blank') return;
+        event.preventDefault();
+        const target = canvasTarget(href);
+        if (how === 'browser' || !target) { openBrowser(href); return; }
         const body = a.closest('[data-canvas-body]');
         const itemId = Number(body?.getAttribute('data-canvas-item'));
-        if (!itemId) return;
-        event.preventDefault();
-        tabAction(root, { navigate: { itemId, file: target } });
-    });
-    // A view tab: a /rpc link inside its fragment moves the same tab (canvas.navigate keeps the tab's history);
-    // other links open a new browser tab, so the chat is never navigated away.
-    document.addEventListener('click', event => {
-        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        const a = event.target.closest?.('[data-canvas-view] a[href]');
-        const root = page();
-        // Files viewer links (inside files.page) are the file handler's: they move the tab to the other file.
-        if (!a || !root || !root.contains(a) || a.hasAttribute('download') || a.closest('[data-canvas-files]')) return;
-        const href = a.getAttribute('href') || '';
-        if (href.startsWith('#')) return;
-        let u;
-        try { u = new URL(href, location.href); } catch { return; }
-        const itemId = Number(a.closest('[data-canvas-view]').getAttribute('data-canvas-view'));
-        event.preventDefault();
-        if (u.origin === location.origin && u.pathname.startsWith('/rpc/')) tabAction(root, { navigate: { itemId, url: u.pathname + u.search } });
-        else window.open(u.href, '_blank', 'noopener');
-    });
+        const kind = body?.getAttribute('data-canvas-kind');
+        // A view tab takes /rpc and Files addresses in place; a tab of the older file kind only other files.
+        const inPlace = itemId && (kind === 'view' ? target.kind !== 'url' : kind === 'file' && target.kind === 'file');
+        if ((how === 'here' || how === 'replace') && inPlace) {
+            const replace = how === 'replace' ? { replace: true } : {};
+            tabAction(root, { navigate: { itemId, ...replace, ...(target.kind === 'file' ? { file: target.args } : { url: target.args.url }) } });
+            return;
+        }
+        showTab(root, target, href);
+    };
+    document.addEventListener('click', onTabLink);
+    document.addEventListener('auxclick', event => { if (event.button === 1) onTabLink(event); });
     // The editor of an Edit view comes as <script> in the body. A refreshed panel is parsed from a template,
     // where scripts are inert, so they are recreated to run (a first page load runs them itself).
     const runBodyScripts = el => {
