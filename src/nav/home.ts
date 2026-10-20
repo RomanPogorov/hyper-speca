@@ -1,6 +1,7 @@
 /**
  * Draws the global menu (⌘/) body while the search box is empty: the tab strip (when there is more than one
  * tab) and the chosen tab's grid of widget tiles, every tile drawn in parallel through nav.drawWidget.
+ * A `lazy` widget without a fresh cached copy gets a "loading…" placeholder that loads GET /nav/widget.
  *
  * Grid: 4 columns on wide screens, 2 on medium, 1 on narrow; S = 1×1, M = 2×1, L = 2×2, wide = full row,
  * tall = one column × 3 rows. Tiles keep DOM order = visual order = keyboard order (no dense packing).
@@ -40,7 +41,12 @@ export default async function (
     };
     const tiles = await Promise.all(tab.widgets.map(async (placement, index) => {
         const def = widgets[placement.widget];
-        const { html } = await ctx.fns.nav.drawWidget({ placement });
+        // A lazy widget never holds the menu up: a fresh cached copy is drawn now, otherwise a placeholder
+        // that htmx replaces with GET /nav/widget once the widget has rendered.
+        const drawn = await ctx.fns.nav.drawWidget({ placement, peek: !!def?.lazy && !edit });
+        const html = drawn.pending
+            ? `<div data-nav-lazy hx-get="/nav/widget?${new URLSearchParams({ tab: tab.id, id: placement.id })}" hx-trigger="load" hx-swap="outerHTML"><div class="px-2 py-2 text-xs text-faint">loading…</div></div>`
+            : drawn.html;
         const title = String((placement.config as any)?.title ?? def?.title ?? placement.widget);
         const at = { tab: tab.id, id: placement.id };
         const sizes = def?.sizes?.length ? def.sizes : ["M"];

@@ -16,6 +16,9 @@ export type Widget = {
     config?: Record<string, { type: "string" | "number" | "boolean"; default?: string | number | boolean; description?: string }>;
     /** Seconds the drawn tile may be reused for the same person, size and config. @default 0 */
     ttl?: number;
+    /** Slow widget (an external API): the menu opens without waiting for it — the tile shows "loading…" and
+     *  its body arrives through GET /nav/widget once rendered; a fresh ttl copy is drawn at once. @default false */
+    lazy?: boolean;
     /** Draws the tile: rows as Item[] (drawn by the framework), trusted HTML, or both; null shows "empty". */
     render: (ctx: Context, session: Session | null, opts: { size: types.nav.Size; config: Record<string, unknown> }) =>
         types.nav.WidgetOutput | types.nav.Item[] | string | null | Promise<types.nav.WidgetOutput | types.nav.Item[] | string | null>;

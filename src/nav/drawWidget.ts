@@ -6,6 +6,8 @@
  * @param opts.placement The placed widget (from nav.tabs).
  * @param opts.timeoutMs Render budget in milliseconds. @default 2500 @minimum 50 @maximum 10000
  * @param opts.fresh Skip the ttl cache and render now (the widget preview canvas uses it). @default false
+ * @param opts.peek Only look in the ttl cache: return the cached tile, or `pending: true` with empty html without
+ * rendering (nav.home uses it for `lazy` widgets, whose body then arrives through GET /nav/widget). @default false
  */
 export default async function (
     ctx: Context,
@@ -17,8 +19,10 @@ export default async function (
         timeoutMs?: number;
         /** Skip the ttl cache and render now (the widget preview canvas uses it). @default false */
         fresh?: boolean;
+        /** Only look in the ttl cache: the cached tile, or `pending: true` without rendering. @default false */
+        peek?: boolean;
     },
-): Promise<{ ok: boolean; html: string; cached: boolean; error?: string; ms?: number }> {
+): Promise<{ ok: boolean; html: string; cached: boolean; pending?: boolean; error?: string; ms?: number }> {
     const state = ((ctx.state as any).nav ??= {});
     const def = (state.widgets ?? {})[opts.placement.widget] as (types.nav.Widget & types.nav.Registered) | undefined;
     const note = (text: string) => `<div class="px-2 py-2 text-xs text-faint">${text}</div>`;
@@ -33,6 +37,7 @@ export default async function (
     const cache: Map<string, { at: number; html: string }> = (state.widgetCache ??= new Map());
     const hit = ttl && !opts.fresh ? cache.get(key) : undefined;
     if (hit && Date.now() - hit.at < ttl) return { ok: true, html: hit.html, cached: true };
+    if (opts.peek) return { ok: true, html: "", cached: false, pending: true };
 
     const budget = Math.max(50, Math.min(10_000, opts.timeoutMs ?? 2500));
     let timer: ReturnType<typeof setTimeout> | undefined;

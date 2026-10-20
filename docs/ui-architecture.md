@@ -69,6 +69,12 @@ The global menu is the primary navigation and command interface. It searches two
 
 Chats in the menu are grouped by project/workspace folder and expose running, pinned and unread state. `Cmd+/` opens the menu. When it is closed, `Ctrl+J` opens the next unread chat and `Ctrl+K` returns through this tab's chat jump history; `Cmd+J/K` retain chat scrolling.
 
+### Freshness and lazy widgets
+
+The menu body is never loaded with the page. Every open (`Cmd+/`, the menu button, and every reopen after a close) fires `nav-refresh`, which re-fetches GET `/nav/items` (`cache-control: no-store`), so the menu always shows the current state of agents and projects. The previous body stays on screen until the fresh one swaps in, and the selection is kept by `data-nav-id`. Before the first open the body is just a "loading…" line. Recent and Projects are not cached and render in about 5–10 ms.
+
+A widget that calls an external API declares `lazy: true` next to its `ttl` (example: `myissues.issues`, the GitHub search, ~0.5 s). `nav.home` draws it through `nav.drawWidget({ peek: true })`. A fresh cached copy is drawn at once. Otherwise the tile gets a "loading…" placeholder with `hx-get="/nav/widget?tab=…&id=…" hx-trigger="load" hx-swap="outerHTML"`, and that route renders the body and fills the cache. A slow widget therefore never holds the menu up. Edit mode draws lazy widgets eagerly.
+
 ## Navigation shell
 
 The shell contains the current URL-addressed page and the full-screen global menu. The menu's Quick section shows New agent plus the ten most recently opened chats; pinned and unread chats are rendered separately, followed by workspace-grouped chats and project/plugin/system columns.

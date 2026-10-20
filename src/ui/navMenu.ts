@@ -1,4 +1,4 @@
-// The global menu (⌘/). Server/HTMX-owned: GET /nav/items draws the current tab's widget grid while the
+// The global menu (⌘/). Server/HTMX-owned, fetched on every open (not on page load): GET /nav/items draws the current tab's widget grid while the
 // box is empty and grouped search results once the person types (see nav.home / nav.searchAll). The frame,
 // the box, tab switching and keys live here; widgets and search sources come from `$widget_` / `$search_`.
 /** Renders the global navigation dialog: search box, tab strip and widget grid (from GET /nav/items), and its keyboard handling. */
@@ -8,13 +8,13 @@ export default function (_ctx: Context, _session: Session | null, _opts?: {}): s
     <div class="flex items-center gap-3 border-b border-ui-border px-4">
       <i class="ph ph-magnifying-glass text-base text-faint" aria-hidden="true"></i>
       <input id="nav-q" name="q" placeholder="Search chats, projects, plugins, people…" autocomplete="off"
-             hx-get="/nav/items" hx-trigger="load, nav-refresh from:body, input changed delay:250ms" hx-target="#nav-results" hx-include="#nav-tab, #nav-edit" hx-sync="this:replace"
+             hx-get="/nav/items" hx-trigger="nav-refresh from:body, input changed delay:250ms" hx-target="#nav-results" hx-include="#nav-tab, #nav-edit" hx-sync="this:replace"
              class="h-11 min-w-0 flex-1 border-0 bg-transparent text-sm text-base-content outline-none placeholder:text-faint">
       <input type="hidden" id="nav-tab" name="tab" value="">
       <input type="hidden" id="nav-edit" name="edit" value="">
       <kbd class="kbd kbd-xs">esc</kbd>
     </div>
-    <div id="nav-results" class="min-h-0 flex-1 overflow-y-auto"></div>
+    <div id="nav-results" class="min-h-0 flex-1 overflow-y-auto"><div class="px-4 py-5 text-sm text-faint">loading…</div></div>
     <div class="flex gap-4 border-t border-ui-border bg-base-200 px-4 py-1.5 text-3xs text-subtle">
       <span>↑↓ ⌃J/⌃K move</span><span>←→ ⌃H/⌃L column</span><span>⌘←/⌘→ widget</span><span>↵ open</span><span>⌘↵ beside</span><span>⌘1–9 tab</span><span class="ml-auto">⌘/ open</span>
     </div>
@@ -141,11 +141,14 @@ export default function (_ctx: Context, _session: Session | null, _opts?: {}): s
     window.__navSelId = '';
     overlay().classList.remove('hidden');
     mark();
+    // The body is fetched on open, never on page load: every open shows the current state (the last body
+    // stays on screen until the fresh one swaps in, keeping the selection by data-nav-id).
+    document.body.dispatchEvent(new CustomEvent('nav-refresh'));
     setTimeout(() => { query().focus(); query().select(); }, 30);
   };
   window.__navClose = function () {
     const field = document.getElementById('nav-edit');
-    if (field && field.value) { field.value = ''; document.body.dispatchEvent(new CustomEvent('nav-refresh')); }
+    if (field) field.value = '';   // the next open fetches without edit controls
     overlay().classList.add('hidden');
     setTimeout(() => document.getElementById('input')?.focus(), 0);
   };
