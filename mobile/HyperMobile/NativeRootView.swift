@@ -1,6 +1,11 @@
 import SwiftUI
 import AuthenticationServices
 
+private enum PhoneNavigationMode: String, Hashable {
+    case recent
+    case projects
+}
+
 struct NativeRootView: View {
     @EnvironmentObject private var servers: ServerProfileStore
     @EnvironmentObject private var sessions: MultiServerSessionCoordinator
@@ -13,7 +18,9 @@ struct NativeRootView: View {
     @State private var showingNewAgent = false
     @State private var createdAgentToOpen: AgentSummary?
     @State private var query = ""
-    @State private var selectedFolder: String?
+    @State private var navigationMode = PhoneNavigationMode.recent
+    @State private var expandedProjectIDs: Set<String> = []
+    @State private var newAgentProjectID = ""
     @State private var needsLogin = false
     @State private var loginPassword = ""
     @State private var loginError: String?
@@ -25,14 +32,20 @@ struct NativeRootView: View {
     @State private var pendingDelete: AgentSummary?
     private var baseURL: URL? { servers.selectedURL }
     private var selectedWorkspace: ServerWorkspaceSnapshot { sessions.workspace(for: servers.selectedID) }
-    private var projects: [(id: String, title: String)] {
-        selectedWorkspace.projects.map { ($0.id, $0.title) } + [("", "Misc")]
+    private var projectSections: [(id: String, title: String, agents: [AgentSummary])] {
+        let grouped = Dictionary(grouping: filtered) { $0.projectId ?? "" }
+        var sections = selectedWorkspace.projects.map { project in
+            (id: project.id, title: project.title, agents: grouped[project.id] ?? [])
+        }
+        if !(grouped[""] ?? []).isEmpty || sections.isEmpty {
+            sections.append((id: "", title: "Misc", agents: grouped[""] ?? []))
+        }
+        return sections
     }
     private var filtered: [AgentSummary] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return selectedWorkspace.agents.filter {
-            (q.isEmpty || $0.title.lowercased().contains(q) || $0.id.lowercased().contains(q) || $0.workspaceDir.lowercased().contains(q)) &&
-            (selectedFolder == nil || ($0.projectId ?? "") == selectedFolder)
+            q.isEmpty || $0.title.lowercased().contains(q) || $0.id.lowercased().contains(q) || $0.workspaceDir.lowercased().contains(q)
         }.sorted {
             if $0.pinned != $1.pinned { return $0.pinned }
             if ($0.unread > 0) != ($1.unread > 0) { return $0.unread > 0 }
@@ -51,9 +64,53 @@ struct NativeRootView: View {
                     ContentUnavailableView("Can’t connect", systemImage: "wifi.exclamationmark", description: Text(error))
                 } else {
                     VStack(spacing: 0) {
+                        Picker("Navigation", selection: $navigationMode) {
+                            Text("Recent").tag(PhoneNavigationMode.recent)
+                            Text("Projects").tag(PhoneNavigationMode.projects)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+
                         List {
-                            ForEach(projects, id: \.id) { project in
-                                agentSection(project.title, filtered.filter { ($0.projectId ?? "") == project.id })
+                            if navigationMode == .recent {
+                                ForEach(filtered) { agent in
+                                    agentRow(agent)
+                                }
+                            } else {
+                                ForEach(projectSections, id: \.id) { section in
+                                    Section {
+                                        DisclosureGroup(isExpanded: Binding(
+                                            get: { expandedProjectIDs.contains(section.id) },
+                                            set: { expanded in
+                                                if expanded { expandedProjectIDs.insert(section.id) }
+                                                else { expandedProjectIDs.remove(section.id) }
+                                            }
+                                        )) {
+                                            Button {
+                                                newAgentProjectID = section.id
+                                                showingNewAgent = true
+                                            } label: {
+                                                Label("New agent", systemImage: "plus.circle")
+                                            }
+                                            .buttonStyle(.plain)
+                                            .foregroundStyle(.tint)
+
+                                            ForEach(section.agents) { agent in
+                                                agentRow(agent)
+                                            }
+                                            if section.agents.isEmpty {
+                                                Text("No chats").foregroundStyle(.secondary)
+                                            }
+                                        } label: {
+                                            HStack {
+                                                Text(section.title).font(.headline)
+                                                Spacer()
+                                                Text("\(section.agents.count)").foregroundStyle(.secondary)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         .listStyle(.plain)
@@ -62,25 +119,10 @@ struct NativeRootView: View {
                     }
                 }
             }
-            .navigationTitle("")
+            .navigationTitle("Chats")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Menu {
-                        Button { selectedFolder = nil } label: { if selectedFolder == nil { Label("All chats", systemImage: "checkmark") } else { Text("All chats") } }
-                        Divider()
-                        ForEach(projects, id: \.id) { project in
-                            Button { selectedFolder = project.id } label: { if selectedFolder == project.id { Label(project.title, systemImage: "checkmark") } else { Text(project.title) } }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(selectedFolder.flatMap { id in projects.first { $0.id == id }?.title } ?? "All chats").font(.headline).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-                        }
-                    }
-                    .accessibilityLabel("Filter chats by folder")
-                }
                 ToolbarItem(placement: .topBarLeading) {
                     ServerSwitcherMenu { showingServers = true }
                 }
@@ -100,7 +142,7 @@ struct NativeRootView: View {
                     .accessibilityLabel("More")
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { selectedFolder = ""; showingNewAgent = true } label: { Image(systemName: "square.and.pencil") }
+                    Button { newAgentProjectID = ""; showingNewAgent = true } label: { Image(systemName: "square.and.pencil") }
                         .accessibilityLabel("New chat")
                 }
             }
@@ -115,8 +157,7 @@ struct NativeRootView: View {
         .onChange(of: servers.profiles) { _, profiles in sessions.activate(profiles: profiles, serverStore: servers) }
         .onChange(of: selectedWorkspace.agents) { _, agents in store.agents = agents }
         .onChange(of: selectedWorkspace.error) { _, error in store.error = error }
-        .onChange(of: selectedFolder) { _, value in MobileStateCache.shared.updateListState(profileID: servers.selectedID, folder: value, query: query) }
-        .onChange(of: query) { _, value in MobileStateCache.shared.updateListState(profileID: servers.selectedID, folder: selectedFolder, query: value) }
+        .onChange(of: query) { _, value in MobileStateCache.shared.updateListState(profileID: servers.selectedID, folder: nil, query: value) }
         .onChange(of: createdAgentToOpen?.id) { _, value in MobileStateCache.shared.updateSelection(profileID: servers.selectedID, agentID: value) }
         .onDisappear { store.stopRefreshing() }
         .onChange(of: servers.selectedID) { _, _ in needsLogin = false; switchServer() }
@@ -124,7 +165,7 @@ struct NativeRootView: View {
         .navigationDestination(item: $createdAgentToOpen) { agent in
             if let baseURL { NativeChatView(agent: agent, baseURL: baseURL, profileID: servers.selectedID, onRead: { Task { await refreshSelected() } }, onNextUnread: { openNextUnread(after: agent.id) }).id(agent.id) }
         }
-        .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL, initialProjectID: selectedFolder ?? "") { created in showingNewAgent = false; openCreatedAgent(created) } } }
+        .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL, initialProjectID: newAgentProjectID) { created in showingNewAgent = false; openCreatedAgent(created) } } }
         .sheet(isPresented: $showingHealth) { if let healthURL = servers.trustedHealthURL { HealthSyncView(baseURL: healthURL, serverName: servers.trustedHealthProfile.name) } }
         .sheet(isPresented: $showingSettings) { ServerProfilesView() }
         .sheet(isPresented: $showingServers) { ServerProfilesView() }
@@ -143,30 +184,24 @@ struct NativeRootView: View {
         } message: { Text("The transcript and attachments will be permanently removed.") }
     }
 
-    @ViewBuilder private func agentSection(_ title: String, _ agents: [AgentSummary]) -> some View {
-        if !agents.isEmpty {
-            Section(title) {
-                ForEach(agents) { agent in
-                    ZStack {
-                        AgentRow(agent: agent)
-                        NavigationLink(value: agent) { EmptyView() }.opacity(0)
-                    }
-                    .listRowSeparator(.visible)
-                    .listRowSeparatorTint(Color.primary.opacity(0.12))
-                    .alignmentGuide(.listRowSeparatorLeading) { _ in 50 }
-                    .listRowInsets(EdgeInsets(top: 1, leading: 16, bottom: 1, trailing: 16))
-                    .listRowSpacing(0)
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) { pendingDelete = agent } label: { Label("Delete", systemImage: "trash") }
-                        Button { archive(agent) } label: { Label("Archive", systemImage: "archivebox") }.tint(.orange)
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") }.tint(.orange)
-                    }
-                    .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") } }
-                }
-            }
+    @ViewBuilder private func agentRow(_ agent: AgentSummary) -> some View {
+        ZStack {
+            AgentRow(agent: agent)
+            NavigationLink(value: agent) { EmptyView() }.opacity(0)
         }
+        .listRowSeparator(.visible)
+        .listRowSeparatorTint(Color.primary.opacity(0.12))
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 50 }
+        .listRowInsets(EdgeInsets(top: 1, leading: 16, bottom: 1, trailing: 16))
+        .listRowSpacing(0)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) { pendingDelete = agent } label: { Label("Delete", systemImage: "trash") }
+            Button { archive(agent) } label: { Label("Archive", systemImage: "archivebox") }.tint(.orange)
+        }
+        .swipeActions(edge: .leading) {
+            Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") }.tint(.orange)
+        }
+        .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") } }
     }
 
     private func openNextUnread(after currentID: String) {
@@ -200,7 +235,7 @@ struct NativeRootView: View {
     }
     private func signInWithSSO() { guard let baseURL else { return }; isLoggingIn = true; loginError = nil; Task { do { try await sso.signIn(baseURL: baseURL); needsLogin = false; sessions.resume(profile: servers.selectedProfile, serverStore: servers); await refreshSelected() } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin { } catch { loginError = error.localizedDescription }; isLoggingIn = false } }
     private func logout() { guard let baseURL else { return }; let profileID = servers.selectedID; Task { do { try await APIClient(baseURL: baseURL).logout(); ServerSessionPool.shared.clear(baseURL: baseURL); servers.markSignedOut(profileID); sessions.remove(profileID: profileID); sessions.activate(profiles: servers.profiles, serverStore: servers); store.stopRefreshing(); store.agents = []; authUser = nil; loginPassword = ""; loginError = nil; needsLogin = true } catch { loginError = error.localizedDescription } } }
-    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); selectedFolder = cached.selectedFolder.flatMap { id in id.isEmpty || snapshot.projects.contains(where: { $0.id == id }) ? id : nil }; query = cached.query; createdAgentToOpen = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = shouldRequireLogin; sessions.resume(profile: servers.selectedProfile, serverStore: servers, refreshImmediately: false); Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
+    private func switchServer() { store.stopRefreshing(); let cached = MobileStateCache.shared.server(servers.selectedID); let snapshot = sessions.workspace(for: servers.selectedID); query = cached.query; createdAgentToOpen = cached.selectedAgentID.flatMap { id in snapshot.agents.first { $0.id == id } }; loginPassword = ""; loginError = nil; store.agents = snapshot.agents; store.error = snapshot.error; authUser = authUserFromSnapshot(); needsLogin = shouldRequireLogin; sessions.resume(profile: servers.selectedProfile, serverStore: servers, refreshImmediately: false); Task { await sessions.refresh(profile: servers.selectedProfile, serverStore: servers, showLoading: snapshot.agents.isEmpty) } }
     private var shouldRequireLogin: Bool {
         servers.auth(for: servers.selectedID).status == .signInRequired && discovery.reachability(for: baseURL) != .noAccess
     }
