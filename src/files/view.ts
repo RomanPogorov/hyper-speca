@@ -50,18 +50,18 @@ async function renderDir(ctx: Context, path: string, wide = false, embedded = fa
     const rows = (await Promise.all(entries.map(async (e, index) => {
         // Joining an absolute parent must not double the slash: "/" + "Users".
         const full = path ? `${path.replace(/\/$/, "")}/${e.name}` : e.name;
-        const icon = e.isDir ? "ph-folder text-subtle" : fileIcon(e.name);
+        const icon = e.isDir ? "ph-folder-simple ph-fill text-primary/70" : `${fileIcon(e.name)} text-subtle`;
         const href = await browserHref(ctx, full, embedded, host);
-        return `<a href="${href}" class="group grid min-h-9 grid-cols-[minmax(0,1fr)_7rem] items-center border-t border-ui-border px-4 text-sm hover:bg-base-200 ${index === 0 ? "border-t-0" : ""}">
-<span class="flex min-w-0 items-center gap-3"><i class="ph ${icon} text-base"></i><span class="truncate text-base-content group-hover:text-primary group-hover:underline">${esc(e.name)}</span></span>
+        return `<a href="${href}" class="group grid h-9 grid-cols-[minmax(0,1fr)_7rem] items-center border-t border-ui-border/60 px-4 text-sm first:border-t-0 hover:bg-base-200/60">
+<span class="flex min-w-0 items-center gap-3"><i class="ph ${icon} text-base"></i><span class="truncate text-base-content group-hover:text-primary">${esc(e.name)}</span></span>
 <span class="text-right text-xs text-faint">${e.isDir ? "Directory" : fileKind(e.name)}</span>
 </a>`;
     }))).join("");
-    const body = `<div class="dot-grid-surface flex-1 overflow-y-auto ${wide ? "p-2" : "px-5 py-5"}">
+    const body = `<div class="bg-base-100 flex-1 overflow-y-auto ${wide ? "p-3" : "px-6 py-5"}">
 <div class="mx-auto w-full ${wide ? "max-w-none" : "max-w-5xl"}">
-  <div class="mb-4 flex min-w-0 items-center gap-2 text-sm text-muted">${crumbs}</div>
-  <div class="overflow-hidden rounded-md border border-ui-border bg-base-100 shadow-sm">
-    <div class="flex h-10 items-center gap-2 border-b border-ui-border bg-base-200 px-4">
+  <div class="mb-3 flex min-w-0 items-center gap-2 text-sm text-muted">${crumbs}</div>
+  <div class="overflow-hidden rounded-lg border border-ui-border bg-base-100">
+    <div class="flex h-10 items-center gap-2 border-b border-ui-border bg-base-200/50 px-4">
       <i class="ph ph-folder-open text-subtle"></i><span class="min-w-0 flex-1 truncate text-sm font-semibold text-base-content">${esc(path ? basename(path) || path : "workspace")}</span>
       <span class="text-xs text-subtle">${entries.length} item${entries.length === 1 ? "" : "s"}</span>
     </div>
@@ -89,8 +89,8 @@ async function renderFile(ctx: Context, path: string, tabParam: string, wide = f
     const content = isMedia ? "" : await ctx.fns.files.read({ path, host });
 
     const tabCls = (id: string) => id === tab
-        ? "border-b-2 border-warning px-3 py-2 text-sm font-semibold text-base-content"
-        : "border-b-2 border-transparent px-3 py-2 text-sm text-muted hover:border-ui-border hover:text-base-content";
+        ? "rounded px-3 py-1 text-xs font-semibold text-base-content bg-base-100 shadow-sm"
+        : "rounded px-3 py-1 text-xs text-muted hover:text-base-content";
     const fileUrl = await browserHref(ctx, path, embedded, host);
     const tabLink = (id: string, label: string) =>
         `<a href="${fileUrl}?tab=${id}" class="${tabCls(id)}">${label}</a>`;
@@ -140,24 +140,24 @@ async function renderFile(ctx: Context, path: string, tabParam: string, wide = f
 <script src="/files/editor.js"></script>`;
     } else {
         const html = await ctx.fns.markdown.highlight({ code: content, lang: shikiLang });
-        contentEl = `<div class="flex-1 overflow-auto text-xs bg-base-100 [&_pre]:m-0 [&_pre]:rounded-none [&_pre]:p-4">${html}</div>`;
+        contentEl = `<div class="flex-1 overflow-auto text-xs bg-base-100 [&_pre]:m-0 [&_pre]:rounded-none [&_pre]:p-4 [&_pre]:!bg-base-100">${html}</div>`;
     }
 
     const crumbs = await breadcrumbs(ctx, path, embedded, host);
     const body = `
-<div class="dot-grid-surface flex-1 min-h-0 overflow-auto ${wide ? "p-2" : "px-5 py-5"}">
+<div class="bg-base-100 flex-1 min-h-0 overflow-auto ${wide ? "p-3" : "px-6 py-5"}">
   <div class="mx-auto flex min-h-full w-full ${wide ? "max-w-none" : "max-w-5xl"} flex-col">
-    <div class="mb-4 flex min-w-0 items-center gap-2 text-sm">${crumbs}</div>
-    <div class="flex min-h-[32rem] flex-1 flex-col overflow-hidden rounded-md border border-ui-border bg-base-100 shadow-sm">
-      <div class="shrink-0 border-b border-ui-border bg-base-200 px-4 pt-3">
-        <div class="flex min-w-0 items-center gap-2">
+    <div class="mb-3 flex min-w-0 items-center gap-2 text-sm">${crumbs}</div>
+    <div class="flex min-h-[32rem] flex-1 flex-col overflow-hidden rounded-lg border border-ui-border bg-base-100">
+      <div class="flex h-11 shrink-0 items-center gap-3 border-b border-ui-border bg-base-200/50 px-3">
+        <nav class="flex items-center gap-0.5 rounded-md bg-base-300/60 p-0.5">${tabs.join("")}</nav>
+        <div class="flex min-w-0 flex-1 items-center gap-2">
           <i class="ph ${fileIcon(name)} text-subtle"></i>
           <span class="min-w-0 flex-1 truncate text-sm font-semibold text-base-content">${esc(name)}</span>
           <span id="save-status" class="text-xs hidden"></span>
           ${tab === "edit" ? `<label class="flex cursor-pointer items-center gap-1 text-xs text-subtle"><input type="checkbox" id="vim-toggle" class="h-3 w-3">vim</label>` : ""}
           <span class="shrink-0 text-xs text-faint">${isMedia ? ext.toUpperCase() : `${content.length} chars · ${content.split("\n").length} lines`}</span>
         </div>
-        <nav class="mt-2 flex items-end gap-1">${tabs.join("")}</nav>
       </div>
       ${tab === "edit" ? `<div id="vim-status" class="hidden shrink-0 bg-base-content px-3 py-0.5 font-mono text-xs text-base-100"></div>` : ""}
       ${contentEl}

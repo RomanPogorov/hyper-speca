@@ -45,13 +45,24 @@ export default async function (ctx: Context, _session: Session | null, opts: {
             return new Response(`<!doctype html><meta charset="utf-8"><body style="font:13px system-ui;padding:16px"><p style="color:#b91c1c">load: ${esc(String(error?.message ?? error))}</p><pre style="white-space:pre-wrap;color:#666">${esc(String(item.args.load))}</pre>`, { headers });
         }
     }
+    // The page looks like Hyper without reaching it: the app's compiled sheet (theme tokens, Tailwind, prose) and the
+    // `.rpc-view` defaults for bare html go in inline — the sandbox has no origin of its own and no network. The page's
+    // own styles come after and win. The theme follows the Hyper page by postMessage (canvas.js), starting from the
+    // system preference.
+    const [appCss, viewCss] = await Promise.all([
+        ctx.fns.canvas.frameCss({}),
+        Bun.file(new URL("../rpc/$style_rpc.css", import.meta.url).pathname).text().catch(() => ""),
+    ]);
+    const looks = `<style>${appCss}</style><style>${viewCss.replace(/<\//g, "<\\/")}</style><style>html,body{margin:0;height:100%}body.rpc-view{padding:0;background:var(--color-base-100);color:var(--color-base-content)}</style>`;
+    const theme = `document.documentElement.dataset.theme=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';document.documentElement.style.colorScheme=document.documentElement.dataset.theme;`;
     // The bridge comes first, as its own document head, so it runs before any page script.
-    const bridge = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}body{font-family:system-ui,sans-serif}</style><script>(()=>{let state=${json(item.state)};const listeners=[];const send=m=>parent.postMessage(Object.assign({hyperCanvas:1},m),'*');
+    const bridge = `<!doctype html><html><head><meta charset="utf-8">${looks}<script>${theme}(()=>{let state=${json(item.state)};const listeners=[];const send=m=>parent.postMessage(Object.assign({hyperCanvas:1},m),'*');
 window.hyper=Object.freeze({get state(){return state},data:${json(data)},
 setState(patch){if(!patch||typeof patch!=='object')throw new Error('hyper.setState: pass an object');state=Object.fromEntries(Object.entries({...state,...patch}).filter(([,v])=>v!==null));send({type:'state',state:patch});},
 ping(text,data){send({type:'ping',text:String(text??''),data});},
 onState(fn){listeners.push(fn);}});
+addEventListener('message',e=>{if(e.source===parent&&e.data&&e.data.hyperCanvas===1&&e.data.type==='theme'&&(e.data.theme==='dark'||e.data.theme==='light')){document.documentElement.dataset.theme=e.data.theme;document.documentElement.style.colorScheme=e.data.theme;}});
 addEventListener('message',e=>{if(e.source!==parent||!e.data||e.data.hyperCanvas!==1||e.data.type!=='state')return;state=e.data.state||{};for(const fn of listeners){try{fn(state)}catch(err){console.error(err)}}});
-addEventListener('error',e=>send({type:'error',message:String(e.message||e.error||'error')}));})();</script></head><body>`;
+addEventListener('error',e=>send({type:'error',message:String(e.message||e.error||'error')}));})();</script></head><body class="rpc-view">`;
     return new Response(bridge + String(item.args.html ?? "") + "</body></html>", { headers });
 }

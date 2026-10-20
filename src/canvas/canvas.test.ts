@@ -197,6 +197,14 @@ test("html tab runs sandboxed, keeps its state live, and pings wake the agent", 
     expect(doc).toContain('"rows":[1,2,3]');
     expect(doc).not.toContain("'</script>'");  // load data cannot close the bridge script
     expect(doc.indexOf("window.hyper")).toBeLessThan(doc.indexOf("<canvas id=c>"));
+    // It looks like Hyper with no network: the app sheet (theme tokens) and the bare-html defaults come inline,
+    // the theme arrives by postMessage, and nothing is linked (CSP has no 'self' to link from).
+    expect(doc).toContain("[data-theme=dark]");
+    expect(doc).toContain(".rpc-view");
+    expect(doc).toContain("type==='theme'");
+    expect(doc).toContain('<body class="rpc-view">');
+    expect(doc).not.toMatch(/<link[^>]+stylesheet/);
+    expect(csp).not.toMatch(/style-src[^;]*'self'/);
 
     // State from the page: saved, the agent sees it, and the body is kept (only the state is posted in).
     const before = await ctx.fns.canvas.revision({ agentId: a.id });

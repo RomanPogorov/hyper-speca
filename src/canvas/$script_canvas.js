@@ -102,6 +102,18 @@
         try { state = JSON.parse(text) || {}; } catch {}
         deliver(frame, state);
     };
+    // ── theme: a sandboxed frame (html tab, srcdoc app) cannot read the page's theme, so it is told ─────
+    // on load and on every switch. Its own document starts from the system preference (canvas.htmlFrame).
+    const themeFrames = () => [...document.querySelectorAll('[data-canvas-body] iframe[data-canvas-frame], [data-canvas-body] iframe[srcdoc]')];
+    const sendTheme = frame => {
+        const theme = document.documentElement.dataset.theme;
+        if (theme === 'dark' || theme === 'light') frame.contentWindow?.postMessage({ hyperCanvas: 1, type: 'theme', theme }, '*');
+    };
+    document.addEventListener('load', event => {
+        if (event.target instanceof HTMLIFrameElement && themeFrames().includes(event.target)) sendTheme(event.target);
+    }, true);
+    new MutationObserver(() => themeFrames().forEach(sendTheme)).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
     // ── url tabs: with the canvas-frames extension the framed site reports where it is now ─────────
     // (extensions/canvas-frames/frame.js). The address bar follows it and the tab remembers the address
     // in its state, so a reload opens the same page. Trusted by source window: a url tab's frame here.
