@@ -3,8 +3,9 @@ import { homedir } from "node:os";
 
 /**
  * Determines who this Hyper is on the mesh: the relay origin, the address host (agents get <agent id>@host) and the node
- * principal its inbox key is bound as. Settings inbox.relay, inbox.host and inbox.principal win; otherwise all three are
- * derived from the Hyperlet agent config of this machine (controlPlane, tenant, node, its service of kind hyper).
+ * principal its inbox key is bound as. Settings inbox.relay, inbox.host and inbox.principal win; otherwise they are derived
+ * from the container env HYPER_PORTAL_AUDIENCE=hn:<tenant>/<node>/<service> with zone from HYPER_OIDC_ISSUER (Hyper envs on
+ * Hypermesh nodes), else from the Hyperlet agent config of this machine (controlPlane, tenant, node, its service of kind hyper).
  * Reads only non-secret config fields, never the Hyperlet token. Throws with a clear hint when neither source is available.
  * @param opts.configPaths Hyperlet config files to try, in order. @default ["/etc/hyperlet-hn/config.json", "~/.config/hyperlet-hn/config.json"]
  */
@@ -15,6 +16,14 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     const get = async (key: string) => String(await ctx.fns.settings.getString({ module: "inbox", scopeType: "global", key, fallback: "" }) ?? "").trim();
     const [relay, host, principal] = [await get("relay"), await get("host"), await get("principal")];
     if (relay && host && principal) return { relay: relay.replace(/\/$/, ""), host: host.toLowerCase(), principal, source: "settings" };
+    // A Hyper env deployed on a Hypermesh node: its portal audience names tenant, node and service; the OIDC issuer is the zone.
+    const env: Record<string, string | undefined> = ctx.env ?? process.env;
+    const aud = /^hn:([a-z0-9-]+)\/([a-z0-9-]+)\/([a-z0-9-]+)$/i.exec(String(env.HYPER_PORTAL_AUDIENCE ?? "").trim());
+    let zone = ""; try { zone = new URL(String(env.HYPER_OIDC_ISSUER ?? "")).hostname; } catch { zone = ""; }
+    if (aud && zone) {
+        const [, tenant, node, svc] = aud;
+        return { relay: relay ? relay.replace(/\/$/, "") : `https://control.${zone}`, host: (host || `${svc}.${tenant}.in.${zone}`).toLowerCase(), principal: principal || `spiffe://hn/${tenant}/${node}`, source: "env" };
+    }
     const paths = opts.configPaths ?? ["/etc/hyperlet-hn/config.json", "~/.config/hyperlet-hn/config.json"];
     for (const p of paths) {
         const path = p.startsWith("~/") ? `${homedir()}/${p.slice(2)}` : p;
@@ -30,5 +39,5 @@ export default async function (ctx: Context, _session: Session | null, opts: {
         if (!out.host) throw new Error(`inbox.whoami: ${path} publishes no service of kind hyper; publish this Hyper (hyperlet.publish) or set inbox.host`);
         return out;
     }
-    throw new Error("inbox.whoami: no Hyperlet config found and settings inbox.relay/host/principal are empty; this Hyper must be on Hypermesh (hyperlet) or configured explicitly");
+    throw new Error("inbox.whoami: no Hyperlet config found and settings inbox.relay/host/principal are empty; this Hyper must be on Hypermesh (hyperlet) or configured explicitly (inbox.relay/host/principal or HYPER_PORTAL_AUDIENCE=hn:<tenant>/<node>/<service>)");
 }
