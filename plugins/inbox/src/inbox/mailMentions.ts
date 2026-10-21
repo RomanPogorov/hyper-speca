@@ -39,7 +39,10 @@ export default async function (ctx: Context, _session: Session | null, opts: {
         const link = `https://${host}/agent/${encodeURIComponent(first.agent_id)}#m-${items[items.length - 1].message_idx}`;
         const text = [...items.map(r => `${who(r.from_actor)}: ${String(r.excerpt)}`), "", `Open the chat: ${link}`, "Reply to this message to answer in the chat."].join("\n");
         let messageId: string | null = null; let error: string | null = null;
+        // Only people who signed in with an identity provider own their email; a hand-typed address could be anyone's.
+        const signedIn = email ? (await ctx.fns.procs.db.select({ sql: `SELECT 1 FROM user_identities WHERE user_id = ? AND lower(email) = ? LIMIT 1`, params: [first.to_user, email] })).length > 0 : false;
         if (!email) error = "the mentioned user has no email";
+        else if (!signedIn) error = "the mentioned user never signed in with that email";
         else try {
             const r = await ctx.fns.inbox.send({ agent: { id: String(first.agent_id) }, to: [email], text, subject: `Mention in «${title}»`, labels: ["mention"], link });
             messageId = r.id; sent++;

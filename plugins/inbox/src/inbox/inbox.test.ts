@@ -81,9 +81,10 @@ async function agent(title: string) {
     return a;
 }
 /** A user of this Hyper (signs in with Google): mentionable by @id; mentions.people is cached, so drop the cache. */
-const hyperUser = async (id: string, email: string) => {
+const hyperUser = async (id: string, email: string, opts: { signedIn?: boolean } = {}) => {
     const now = Date.now();
     await ctx.fns.procs.db.run({ sql: "INSERT INTO users (id, email, name, role, created_at, updated_at, configured_at) VALUES (?, ?, ?, 'member', ?, ?, ?) ON CONFLICT DO NOTHING", params: [id, email, id, now, now, now] });
+    if (opts.signedIn !== false) await ctx.fns.procs.db.run({ sql: "INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES ('google', ?, ?, ?, ?) ON CONFLICT DO NOTHING", params: [`sub-${id}`, id, email, now] });
     delete ctx.state.mentions;
     return { id };
 };
@@ -254,4 +255,11 @@ t("@mention safety: a read mention is not mailed; a reply in the thread from som
     await ctx.fns.mentions.record({ agentId: chat.id, messageIdx: 3, text: `@${nokey.id} тоже`, from: null });
     expect(await ctx.fns.inbox.mailMentions({ force: true, minAgeMs: 0 })).toMatchObject({ sent: 0, failed: 1 });
     expect(await ctx.fns.inbox.mailMentions({ force: true, minAgeMs: 0 })).toMatchObject({ mentions: 0 });
+    // A user whose email was only typed in by an admin (never signed in with it): no mail to that address.
+    const typed = await hyperUser("typed", "sam-m@health-samurai.io".replace("sam", "typed"), { signedIn: false });
+    await person("typed-m@health-samurai.io");
+    await ctx.fns.mentions.record({ agentId: chat.id, messageIdx: 4, text: `@${typed.id} секрет`, from: null });
+    expect(await ctx.fns.inbox.mailMentions({ force: true, minAgeMs: 0 })).toMatchObject({ sent: 0, failed: 1 });
+    const [rec] = await ctx.fns.procs.db.select({ sql: "SELECT error FROM inbox.mention_mail WHERE to_user = 'typed'" }) as any[];
+    expect(rec.error).toContain("never signed in");
 });
