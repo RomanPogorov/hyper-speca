@@ -262,4 +262,8 @@ t("@mention safety: a read mention is not mailed; a reply in the thread from som
     expect(await ctx.fns.inbox.mailMentions({ force: true, minAgeMs: 0 })).toMatchObject({ sent: 0, failed: 1 });
     const [rec] = await ctx.fns.procs.db.select({ sql: "SELECT error FROM inbox.mention_mail WHERE to_user = 'typed'" }) as any[];
     expect(rec.error).toContain("never signed in");
+    // Agents talking to each other about the person (<agent-message>) is not a mention to mail.
+    await ctx.fns.session.appendMessage({ id: chat.id, message: { role: "user", content: `<agent-message from="zz">спроси @${u.id}</agent-message>`, author: "agent:zz", message_type: "agent_message" } });
+    expect((await ctx.fns.mentions.list({ userId: u.id, unreadOnly: true })).length).toBeGreaterThan(0);
+    expect(await ctx.fns.inbox.mailMentions({ force: true, minAgeMs: 0 })).toMatchObject({ sent: 0, mentions: 0 });
 });

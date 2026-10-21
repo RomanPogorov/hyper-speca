@@ -4,7 +4,8 @@
  * in time gets no mail), not older than a day and never mailed, and sends ONE message per chat and person: from the chat agent's
  * address to the person's sign-in email, labeled `mention`, with a link to the chat on this Hyper. Every mention is recorded once
  * (sent or failed: a person without an inbox is not retried); a reply in the mail's thread comes back into the chat (inbox.sync).
- * No-op while inbox.enabled is off. Use from the inbox-mentions cron; call by hand to flush now.
+ * Mentions inside agent-to-agent messages (<agent-message>, message_type agent_message) stay in Hyper only: they are agents
+ * talking about the person, not to them. No-op while inbox.enabled is off. Use from the inbox-mentions cron; call by hand to flush now.
  * @param opts.minAgeMs Mail only mentions unread for at least this long. @default 60000 @minimum 0
  * @param opts.force Run even when inbox.enabled is off (tests, a manual flush). @default false
  */
@@ -20,7 +21,8 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     const rows = await ctx.fns.procs.db.select({
         sql: `SELECT m.id, m.agent_id, m.message_idx, m.from_actor, m.to_user, m.excerpt, m.created_at, a.title
                 FROM mentions m JOIN agents a ON a.id = m.agent_id AND a.archived_at IS NULL
-               WHERE m.read_at IS NULL AND m.created_at <= ? AND m.created_at > ?
+                LEFT JOIN messages msg ON msg.agent_id = m.agent_id AND msg.idx = m.message_idx
+               WHERE m.read_at IS NULL AND COALESCE(msg.message_type, 'message') <> 'agent_message' AND m.created_at <= ? AND m.created_at > ?
                  AND NOT EXISTS (SELECT 1 FROM inbox.mention_mail s WHERE s.mention_id = m.id)
                ORDER BY m.agent_id, m.to_user, m.created_at, m.id LIMIT 200`,
         params: [now - minAge, now - 24 * 3600_000],
