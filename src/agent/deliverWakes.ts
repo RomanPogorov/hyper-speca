@@ -8,43 +8,49 @@ now?: number;
 limit?: number }): Promise<{ delivered: string[] }> {
     const now = Math.floor(opts?.now ?? Date.now());
     const limit = Math.max(1, Math.min(20, opts?.limit ?? 10));
-    const rows = (await ctx.fns.procs.db.select({
-        sql: `WITH due AS (
-                SELECT id, wake_reason FROM agents
-                 WHERE wake_at IS NOT NULL AND wake_at <= ? AND archived_at IS NULL
-                 ORDER BY wake_at ASC LIMIT ? FOR UPDATE SKIP LOCKED
-              ), cleared AS (
-                UPDATE agents a
-                   SET wake_at = NULL, wake_reason = NULL,
-                       next_run_at = COALESCE(a.next_run_at, ?), updated_at = ?
-                  FROM due WHERE a.id = due.id
-                RETURNING a.id, due.wake_reason
-              ) SELECT * FROM cleared`,
-        params: [now, limit, now, now],
+    const due = (await ctx.fns.procs.db.select({
+        sql: `SELECT id, wake_at, wake_reason FROM agents
+               WHERE wake_at IS NOT NULL AND wake_at <= ? AND archived_at IS NULL
+               ORDER BY wake_at ASC LIMIT ?`,
+        params: [now, limit],
     })) as any[];
     const delivered: string[] = [];
-    for (const row of rows) {
+    for (const row of due) {
         const id = String(row.id);
+        const wakeAt = Number(row.wake_at);
         const reason = String(row.wake_reason ?? "Scheduled wake-up");
-        // A parked agent wakes because its quota came back — the mark must go
-        // before it runs, or the UI would keep claiming it is waiting. resume
-        // is off: the wake itself already scheduled the run.
+        // Clearing the alarm and writing its message are ONE transaction: the old
+        // order (clear first, append after) lost the wake on a crash in between.
+        const result = await ctx.fns.agent.deliver({
+            to: id,
+            type: "wake_up",
+            text: `Wake-up: ${reason}`,
+            key: `wake:${wakeAt}`,
+            source: "wake-delivered",
+            event: { type: "wake_up", reason },
+            section: "wake",
+            now,
+            before: async () => (await ctx.fns.procs.db.run({
+                sql: "UPDATE agents SET wake_at = NULL, wake_reason = NULL WHERE id = ? AND wake_at = ?",
+                params: [id, wakeAt],
+            })).changes > 0,
+        });
+        if (!result.delivered) {
+            // Duplicate (already delivered before a crash) — just make sure the alarm is gone.
+            if (result.duplicate) await ctx.fns.procs.db.run({ sql: "UPDATE agents SET wake_at = NULL, wake_reason = NULL WHERE id = ? AND wake_at = ?", params: [id, wakeAt] });
+            continue;
+        }
+        // A parked agent wakes because its quota came back — drop the mark right
+        // after the alarm is consumed (as before: alarm cleared, then unpark sees
+        // wake_at NULL and restores the person's own earlier reminder). resume is
+        // off: the delivery itself already scheduled the run.
         try { await ctx.fns.agent.unpark({ id, reason: "wake", resume: false }); }
         catch (error: any) { console.error(`unpark on wake failed for ${id}:`, error?.message ?? error); }
-        const message = await ctx.fns.session.appendMessage({ id, message: {
-            role: "user",
-            content: `Wake-up: ${reason}`,
-            message_type: "wake_up",
-            excluded_from_cursor: true,
-        } });
-        await ctx.fns.session.appendEvent({ id, event: { type: "wake_up", reason, messageIdx: message.idx } });
         const agent = (ctx.state as any).agent?.[id];
         if (agent) {
             agent.wakeAt = null;
             agent.wakeReason = null;
-            await ctx.fns.session.syncAgentState({ agent });
         }
-        ctx.fns.events.refreshAgentMeta({ agentId: id, section: "wake", reason: "wake-delivered" });
         delivered.push(id);
     }
     if (delivered.length) ctx.fns.agent.wakeWorker({});

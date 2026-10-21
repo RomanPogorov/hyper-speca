@@ -12,7 +12,8 @@ describe("agent durable triggers", () => {
     const rows = await ctx.fns.agent.triggers({ id: agent.id, status: "all" });
     expect(rows[0].status).toBe("completed");
     const messages = await ctx.fns.session.getMessages({ id: agent.id });
-    expect(messages.at(-1)).toMatchObject({ role: "user", content: "Continue later", message_type: "trigger", excluded_from_cursor: true });
+    expect(messages.at(-1)).toMatchObject({ role: "user", content: "Continue later", message_type: "trigger" });
+    expect(messages.at(-1).excluded_from_cursor ?? false).toBe(false);
   });
 
   test("cron advances and cancelAll cancels active triggers", async () => {

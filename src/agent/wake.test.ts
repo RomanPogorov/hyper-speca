@@ -13,7 +13,8 @@ describe("legacy wake compatibility", () => {
     await ctx.fns.agent.pollTriggers({ now: now + 1001 });
     await Bun.sleep(30);
     const messages = await ctx.fns.session.getMessages({ id: agent.id });
-    expect(messages.at(-1)).toMatchObject({ role: "user", content: "check build", message_type: "trigger", excluded_from_cursor: true });
+    expect(messages.at(-1)).toMatchObject({ role: "user", content: "check build", message_type: "trigger" });
+    expect(messages.at(-1).excluded_from_cursor ?? false).toBe(false);
   });
 
   test("cancelWake cancels unified one-shot alarms", async () => {

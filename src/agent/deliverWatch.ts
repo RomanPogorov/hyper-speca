@@ -52,20 +52,24 @@ export default async function (
     }
 
     const finalStatus = status === "ready" ? "completed" : "timeout";
-    const finalized = await ctx.fns.procs.db.run({
-        sql: "UPDATE agent_watches SET status = ?, attempts = attempts + 1, last_error = ?, finished_at = ? WHERE id = ? AND status = 'checking'",
-        params: [finalStatus, error, now, row.id],
-    });
-    if (finalized.changes === 0) return { status: "missing" };
-
     const summary = status === "ready" ? `Wake condition met: ${row.reason}` : `Wake condition timed out: ${row.reason}`;
     const body = status === "ready" ? `${summary}\n\nResult: ${JSON.stringify(result)}` : summary;
-    const message = await ctx.fns.session.appendMessage({ id: row.agent_id, message: { role: "user", content: body, message_type: "wake_up", excluded_from_cursor: true } });
-    await ctx.fns.session.appendEvent({ id: row.agent_id, event: { type: "wake_up", reason: row.reason, summary, result: status === "ready" ? result : null, messageIdx: message.idx, watchId: row.id, watchStatus: status } });
-    await ctx.fns.procs.db.run({ sql: "UPDATE agents SET next_run_at = COALESCE(next_run_at, ?), updated_at = ? WHERE id = ?", params: [now, now, row.agent_id] });
-    const agent = (ctx.state as any).agent?.[row.agent_id];
-    if (agent) await ctx.fns.session.syncAgentState({ agent });
-    ctx.fns.events.refreshAgentMeta({ agentId: row.agent_id, section: "wake", reason: "watch-delivered" });
-    ctx.fns.agent.wakeWorker({});
+    // Terminal status and the wake message commit together: before, the watch was
+    // finalized first and a crash before the append lost the wake for good.
+    const delivered = await ctx.fns.agent.deliver({
+        to: String(row.agent_id),
+        type: "wake_up",
+        text: body,
+        key: `watch:${row.id}`,
+        source: "watch-delivered",
+        event: { type: "wake_up", reason: row.reason, summary, result: status === "ready" ? result : null, watchId: row.id, watchStatus: status },
+        section: "wake",
+        now,
+        before: async () => (await ctx.fns.procs.db.run({
+            sql: "UPDATE agent_watches SET status = ?, attempts = attempts + 1, last_error = ?, finished_at = ? WHERE id = ? AND status = 'checking'",
+            params: [finalStatus, error, now, row.id],
+        })).changes > 0,
+    });
+    if (!delivered.delivered && !delivered.duplicate) return { status: "missing" };
     return { status, ...(status === "ready" ? { result } : {}) };
 }

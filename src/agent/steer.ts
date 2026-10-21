@@ -32,8 +32,20 @@ export default async function (
     const taskTitle = opts.taskTitle ? String(opts.taskTitle) : null;
     const content = '<team-update member="' + child.id + '" event="' + opts.event + '">Agent ' + child.id + ' ' + opts.event + (taskTitle ? ' task "' + taskTitle + '"' : '') + '. ' + summary + '</team-update>';
     const ts = Date.now();
-    const message = await ctx.fns.session.appendMessage({ id: parentId, message: { role: "user", content, message_type: "team_update" } });
-    await ctx.fns.session.appendEvent({ id: parentId, event: { type: "team_update", event: opts.event, memberId: child.id, taskId: opts.taskId ?? null, taskTitle, summary, messageIdx: message.idx } });
+    // Message, UI event and the parent's schedule commit together (agent.deliver).
+    // The schedule is set even while the parent is running: the worker claim already
+    // consumed the previous one, so an update landing during the final model call
+    // triggers another pass.
+    const message = await ctx.fns.agent.deliver({
+        to: parentId,
+        type: "team_update",
+        text: content,
+        author: "agent:" + child.id,
+        source: "team-update",
+        event: { type: "team_update", event: opts.event, memberId: child.id, taskId: opts.taskId ?? null, taskTitle, summary },
+        section: "team",
+        now: ts,
+    });
     if (opts.event === "blocked" || opts.event === "failed") {
         child.scratchpad ??= {};
         const meta = child.scratchpad.delegation;
@@ -43,14 +55,6 @@ export default async function (
             await ctx.fns.session.updateScratchpad({ id: child.id, scratchpad: child.scratchpad });
         }
     }
-    // Always set a schedule, including while the parent is running. The worker
-    // claim already consumed the previous schedule; preserving this value makes
-    // a team update that lands during the final model call trigger another pass.
-    await ctx.fns.procs.db.run({ sql: "UPDATE agents SET next_run_at = COALESCE(next_run_at, ?), updated_at = ? WHERE id = ? AND archived_at IS NULL", params: [ts, ts, parentId] });
-    const parent = (ctx.state as any).agent?.[parentId];
-    if (parent) await ctx.fns.session.syncAgentState({ agent: parent });
-    ctx.fns.events.refreshAgentMeta({ agentId: parentId, section: "team", reason: "team-update" });
     ctx.fns.events.refreshAgentMeta({ agentId: child.id, section: "plan", reason: "team-update" });
-    ctx.fns.agent.wakeWorker({});
-    return { delivered: true, parentId, messageIdx: message.idx };
+    return { delivered: true, parentId, messageIdx: message.messageIdx ?? undefined };
 }

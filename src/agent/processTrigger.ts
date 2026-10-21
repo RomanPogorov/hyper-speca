@@ -32,13 +32,13 @@ export default async function (
     } catch {
         resultJson = JSON.stringify({truncated:true,preview:"[unserializable result]",storageError:"Full result unavailable: serialization failed"});
     }
-    try {if(prompt){const delivered=await ctx.fns.agent.deliverTriggerPrompt({triggerId:row.id,claimToken:opts.claimToken,prompt,now,resultRef,resultPreview:resultRef?resultPreview:undefined});if(!delivered)return{outcome:"cancelled"};}}catch(e:any){outcome="error";error=String(e?.message??e).slice(0,1000);nextAt=now+Math.min(15*60000,Math.max(60000,60000*Math.pow(2,Math.min(Number(row.attempts??0),4))));status="active";}
-    // Delivery remains outside this transaction: retries can repeat a prompt.
+    try {if(prompt){const delivered=await ctx.fns.agent.deliverTriggerPrompt({triggerId:row.id,claimToken:opts.claimToken,prompt,now,occurrence:Number(row.next_at??now),resultRef,resultPreview:resultRef?resultPreview:undefined});if(!delivered)return{outcome:"cancelled"};}}catch(e:any){outcome="error";error=String(e?.message??e).slice(0,1000);nextAt=now+Math.min(15*60000,Math.max(60000,60000*Math.pow(2,Math.min(Number(row.attempts??0),4))));status="active";}
+    // Delivery is its own transaction keyed by trigger id + scheduled time: a retry after a crash between delivery and this finalize is a duplicate, not a second prompt.
     // Final state must never commit without its audit record (or existing conflict).
     return await ctx.fns.procs.db.transaction({fn:async () => {
         const final=await ctx.fns.procs.db.run({sql:"UPDATE agent_triggers SET status=?,next_at=?,last_ready=?,attempts=attempts+1,last_error=?,claim_token=NULL,claimed_at=NULL,updated_at=?,finished_at=CASE WHEN ? IN ('completed','timed_out') THEN ? ELSE finished_at END WHERE id=? AND status='checking' AND claim_token=?",params:[status,nextAt,lastReady,error,now,status,now,row.id,opts.claimToken]});
         if(final.changes===0)return{outcome:"cancelled"};
         await ctx.fns.procs.db.run({sql:"INSERT INTO agent_trigger_runs(trigger_id,scheduled_at,outcome,result,result_ref,error,created_at) VALUES(?,?,?,?::jsonb,?::jsonb,?,?) ON CONFLICT DO NOTHING",params:[row.id,Number(row.next_at??now),outcome,resultJson,resultRef?JSON.stringify(resultRef):null,error,now]});
         return{outcome};
-    }});
+    }}) as { outcome: string };
 }
