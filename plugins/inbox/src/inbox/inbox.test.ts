@@ -195,8 +195,12 @@ t("cursor and idempotence: a second sync gets nothing new; unknown addresses fai
 
 t("background loop: inbox.ensure starts it only when enabled, it delivers by long poll, and stops when disabled", async () => {
     expect(await ctx.fns.inbox.ensure({})).toMatchObject({ running: false, reason: "inbox.enabled is off" });
+    // A fresh env: turning inbox.enabled on is all it takes, ensure registers the key on the relay by itself.
+    await ctx.fns.procs.db.run({ sql: "DELETE FROM inbox.state WHERE key = 'registered'" });
+    expect(await ctx.fns.inbox.status({})).toMatchObject({ registered: false });
     await ctx.fns.settings.set({ module: "inbox", scopeType: "global", key: "enabled", value: true });
     expect(await ctx.fns.inbox.ensure({})).toMatchObject({ running: true });
+    expect(await ctx.fns.inbox.status({})).toMatchObject({ registered: true });
     const kate = await person("kate@health-samurai.io");
     const a = await agent("Live");
     await ctx.fns.inbox.alias({ name: "live", agentId: a.id });

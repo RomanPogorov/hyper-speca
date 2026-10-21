@@ -1,12 +1,24 @@
 /**
- * Keeps the background receive loop running: starts inbox.loop when the inbox.enabled setting is on, this Hyper has a key and no loop
- * runs in this process; stops it when the setting is off. Called every minute by the inbox cron declaration and safe to call any time.
+ * Keeps the background receive loop running: when the inbox.enabled setting is on it first makes sure this Hyper has a key bound on
+ * the relay (inbox.register, retried at most every 10 minutes after a refusal), then starts inbox.loop if none runs in this process;
+ * stops it when the setting is off. So turning inbox.enabled on is the whole setup of an env. Called every minute by the inbox cron declaration and safe to call any time.
  */
 export default async function (ctx: Context, _session: Session | null, _opts: {}): Promise<{ running: boolean; reason: string | null }> {
     const state = ((ctx.state as any).inbox ??= {});
     const enabled = await ctx.fns.settings.get({ module: "inbox", scopeType: "global", key: "enabled" });
     if (enabled !== true && enabled !== "true") { state.running = false; return { running: false, reason: "inbox.enabled is off" }; }
     if (state.running) return { running: true, reason: null };
+    const reg = await ctx.fns.inbox.getState({ key: "registered" });
+    const have = await ctx.fns.inbox.connection({}).catch(() => null);
+    if (!reg || !have || reg.npub !== have.conn.npub) {
+        if (Date.now() - (state.registerFailedAt ?? 0) < 10 * 60_000) return { running: false, reason: state.registerError ?? "registration failed" };
+        try { await ctx.fns.inbox.register({}); state.registerFailedAt = 0; state.registerError = null; }
+        catch (error: any) {
+            state.registerFailedAt = Date.now(); state.registerError = String(error?.message ?? error);
+            ctx.fns.procs.log.warn({ event: "inbox.register.failed", msg: state.registerError });
+            return { running: false, reason: state.registerError };
+        }
+    }
     const c = await ctx.fns.inbox.connection({}).catch((error: any) => ({ error: String(error?.message ?? error) }));
     if (!c) return { running: false, reason: "no inbox key — run inbox.register" };
     if ("error" in c) return { running: false, reason: c.error };
