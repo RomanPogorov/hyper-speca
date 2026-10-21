@@ -31,4 +31,10 @@ export type ToolRun = {
     aborted: boolean;
     /** Cancels the call; bash kills the process, other tools stop being awaited. */
     controller: AbortController;
+    /** Set by a tool that can hand its work over to a background job (local bash); the UI shows "to background" only then. */
+    detachable?: boolean;
+    /** Aborted when the person asks to move the call to the background; the tool returns at once and keeps the work running as a job. */
+    detach?: AbortController;
+    /** Secret references of the call (bash), so a detached job can mask them in its output. */
+    secrets?: Record<string, string>;
 };

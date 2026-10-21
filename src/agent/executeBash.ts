@@ -51,6 +51,7 @@ export default async function (
     });
 
     const buf = { out: "", err: "" };
+    let stream_to_log: ((text: string) => void) | null = null;
 
     // The live tail. tools.call puts the handle on the ctx when this runs as a
     // tool; called directly (tests, other code) there is none and the streaming
@@ -71,6 +72,7 @@ export default async function (
         const decoder = new TextDecoder();
         for await (const chunk of stream_) {
             const text = decoder.decode(chunk, { stream: true });
+            if (stream_to_log) { stream_to_log(text); continue; }
             buf[key] += text;
             stream(text);
         }
@@ -90,14 +92,44 @@ export default async function (
         run.controller.signal.addEventListener("abort", () => resolve("aborted"), { once: true });
     });
 
+    // "To background": the person stops waiting, the process keeps running as a job.
+    // What was printed so far and everything after goes to the job's log; the exit
+    // code is written when the process ends, and jobs.poll reports it.
+    if (run && run.agentId) { run.detachable = true; run.detach ??= new AbortController(); }
+    const detach = new Promise<"detach">(resolve => {
+        const signal = run?.detach?.signal;
+        if (!signal) return;
+        if (signal.aborted) return resolve("detach");
+        signal.addEventListener("abort", () => resolve("detach"), { once: true });
+    });
+
     const seconds = Number(opts.timeout);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = Number.isFinite(seconds) && seconds > 0
         ? new Promise<"timeout">(resolve => { timer = setTimeout(() => resolve("timeout"), seconds * 1000); })
         : new Promise<"timeout">(() => { /* no timeout declared: never settles */ });
 
-    const who = await Promise.race([finished.then(() => "done" as const), deadline, abort]);
+    const who = await Promise.race([finished.then(() => "done" as const), deadline, abort, detach]);
     clearTimeout(timer);
+
+    if (who === "detach" && run) {
+        const job = await ctx.fns.jobs.adopt({ agentId: run.agentId, command: code, startedAt: run.startedAt, secrets: run.secrets, kill: () => proc.kill(9) });
+        const { appendFileSync, writeFileSync, renameSync } = await import("node:fs");
+        const log = `${job.dir}/out.log`;
+        appendFileSync(log, buf.out + buf.err);
+        // From now on every chunk goes to the log file instead of the tool result.
+        stream_to_log = (text: string) => { try { appendFileSync(log, text); } catch { /* disk full: tail is best effort */ } };
+        void finished.then(async () => {
+            const code_ = await proc.exited;
+            writeFileSync(`${job.dir}/exit.tmp`, String(code_));
+            renameSync(`${job.dir}/exit.tmp`, `${job.dir}/exit`);
+        }).catch(() => undefined);
+        const secs = Math.round((Date.now() - run.startedAt) / 1000);
+        return {
+            output: `[moved to the background by the user after ${secs}s — still running as job ${job.id}]\nYou will get a message when it ends — do not wait or poll. Output: ctx.fns.jobs.logs({ id: "${job.id}" }); stop: ctx.fns.jobs.cancel({ id: "${job.id}" }).`,
+            isError: false,
+        };
+    }
 
     if (who !== "done") {
         proc.kill(9);

@@ -65,6 +65,18 @@ export default function (
             }),
         });
 
+        const toBackground = r.detachable && !r.aborted
+            ? ctx.fns.procs.ui.button({
+                action: "detach-tool-call",
+                label: "To background",
+                size: "xs",
+                class: "rounded-full",
+                title: "Stop waiting: the command keeps running as a background job and the agent is told when it ends",
+                post: `/agent/${encodeURIComponent(id)}/tool/${encodeURIComponent(r.id)}/detach`,
+                swap: "none",
+            })
+            : "";
+
         const tail = r.tail.trimEnd();
         // Last lines only: this is a liveness display, not a log. The full
         // output arrives as the tool result.
@@ -77,10 +89,10 @@ export default function (
 
         return `<div class="flex flex-wrap items-center gap-2">`
             + `<span class="relative flex size-6 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">`
-            + ctx.fns.agent.toolSpinner({ icon: r.icon, startedAt: r.startedAt, timeoutMs: r.timeoutMs, iconClass: "text-xs" })
+            + ctx.fns.agent.toolSpinner({ icon: r.icon, startedAt: r.startedAt, timeoutMs: r.timeoutMs ?? undefined, iconClass: "text-xs" })
             + `</span>`
             + `<span class="text-xs font-semibold">${esc(r.name)}</span>${timer}`
-            + `<span class="ml-auto">${stop}</span></div>`
+            + `<span class="ml-auto flex gap-2">${toBackground}${stop}</span></div>`
             + (r.subject ? `<div class="mt-2 break-words font-mono text-2xs text-muted">${esc(r.subject)}</div>` : "")
             + `<section class="mt-3"><div class="mb-1 flex items-center gap-2 text-3xs font-semibold uppercase tracking-wide text-faint">`
             + `<i class="ph ph-arrow-left" aria-hidden="true"></i> Output so far</div>${tailHtml}</section>`;

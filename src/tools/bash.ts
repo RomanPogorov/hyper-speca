@@ -9,6 +9,8 @@
  * @param opts.env Additional environment variables.
  * @param opts.secrets Secret references exposed as environment variables; values are redacted from output.
  * @param opts.timeout Timeout in seconds.
+ * @param opts.background Start as a background job (jobs.start) and return its id at once; the agent is messaged when it ends.
+ * @param opts.notify With background — instruction included in the completion message.
  */
 export default async function (
     ctx: Context,
@@ -26,8 +28,24 @@ export default async function (
         secrets?: Record<string, string>;
         /** Timeout in seconds. */
         timeout?: number;
+        /** Start as a background job (jobs.start) and return its id at once; the agent is messaged when it ends. @default false */
+        background?: boolean;
+        /** With background — instruction included in the completion message. */
+        notify?: string;
     },
 ): Promise<{ output: string; isError: boolean }> {
+    if (opts.background) {
+        const job = await ctx.fns.jobs.start({
+            runner: "bash", command: opts.command, host: opts.host, cwd: opts.cwd, env: opts.env, secrets: opts.secrets,
+            timeout: opts.timeout, prompt: opts.notify, originToolCallId: (ctx as any).toolRun?.toolCallId,
+        });
+        return {
+            output: `Started background job ${job.id}${job.host ? ` on ${job.host}` : ""}: ${job.title}\nYou will get a message when it ends — do not wait or poll; end your turn or do other work. Output: ctx.fns.jobs.logs({ id: "${job.id}" }); stop: ctx.fns.jobs.cancel({ id: "${job.id}" }).`,
+            isError: false,
+        };
+    }
+    const toolRun: types.tools.ToolRun | undefined = (ctx as any).toolRun;
+    if (toolRun && opts.secrets) toolRun.secrets = opts.secrets;
     const secretEnv: Record<string, string> = {};
     const sensitive: string[] = [];
 
