@@ -55,7 +55,7 @@ final class ChatStore: ObservableObject {
     private var cacheProfileID: String?
     private var cacheAgentID: String?
 
-    func start(baseURL: URL, agentID: String, profileID: String? = nil) async {
+    func start(baseURL: URL, agentID: String, profileID: String? = nil, aroundMessageIdx: Int? = nil) async {
         pollTask?.cancel()
         let resolvedProfileID = profileID ?? MobileStateCache.fallbackProfileID(for: baseURL)
         cacheProfileID = resolvedProfileID
@@ -70,7 +70,7 @@ final class ChatStore: ObservableObject {
         }
         isLoading = events.isEmpty
         do {
-            let page = try await APIClient(baseURL: baseURL).events(agentID: agentID, limit: 100)
+            let page = try await APIClient(baseURL: baseURL).events(agentID: agentID, aroundMessageIdx: aroundMessageIdx, limit: 100)
             _ = try? await APIClient(baseURL: baseURL).markRead(agentID: agentID)
             events = page.events
             olderBefore = page.olderBefore
@@ -80,6 +80,7 @@ final class ChatStore: ObservableObject {
             error = nil
             partial = page.partial
             persistCache()
+            historyAnchorID = page.targetEventIdx
         } catch { self.error = error.localizedDescription }
         isLoading = false
         pollTask = Task { [weak self] in

@@ -76,6 +76,50 @@ struct MentionPerson: Codable, Hashable, Identifiable {
     let picture: String?
 }
 
+struct MobileMention: Codable, Identifiable, Hashable {
+    let id: Int
+    let agentId: String
+    let agentTitle: String?
+    let messageIdx: Int
+    let from: String?
+    let excerpt: String
+    let createdAt: Double
+    let readAt: Double?
+    let author: EventAuthor?
+    let fromAgent: String?
+}
+
+struct MentionsResponse: Codable {
+    let version: Int
+    let unread: Int
+    let mentions: [MobileMention]
+}
+
+struct MentionReadResponse: Codable {
+    let version: Int
+    let ok: Bool
+    let id: Int
+    let read: Int
+    let unread: Int
+}
+
+struct MobileAgentDetail: Codable {
+    let id: String
+    let title: String
+    let model: String
+    let workspaceDir: String
+    let runState: String
+    let updatedAt: Double
+}
+
+struct MobileAgentResponse: Codable { let version: Int; let agent: MobileAgentDetail }
+
+extension MobileAgentDetail {
+    var summary: AgentSummary {
+        AgentSummary(id: id, title: title, model: model, runState: runState, unread: 0, mentions: 0, turns: 0, updatedAt: updatedAt, workspaceDir: workspaceDir, projectId: nil, projectTitle: nil, pinned: false, delegated: false, visibility: "nav")
+    }
+}
+
 struct MobileEvent: Codable, Identifiable, Hashable {
     let idx: Int
     let ts: Double
@@ -120,6 +164,8 @@ struct EventsResponse: Codable {
     let runState: String
     let lastError: String?
     let partial: PartialAssistant?
+    let targetEventIdx: Int?
+    let hasNewer: Bool?
 }
 struct PartialAssistant: Codable, Equatable {
     let text: String

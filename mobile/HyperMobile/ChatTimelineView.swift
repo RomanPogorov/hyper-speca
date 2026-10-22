@@ -11,6 +11,8 @@ struct ChatTimelineView<RowContent: View>: View {
     let hasOlder: Bool
     let isLoadingOlder: Bool
     let loadOlder: () async -> Void
+    let targetRowID: String?
+    let targetRevision: Int
     let dismissKeyboard: () -> Void
     @ViewBuilder let rowContent: (ChatTimelineRow) -> RowContent
 
@@ -48,7 +50,10 @@ struct ChatTimelineView<RowContent: View>: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: dismissKeyboard)
-            .onAppear { scrollToBottom(proxy, animated: false) }
+            .onAppear {
+                if let targetRowID { scrollToTarget(targetRowID, proxy: proxy) }
+                else { scrollToBottom(proxy, animated: false) }
+            }
             .onChange(of: rows) { oldRows, newRows in
                 guard !newRows.isEmpty else { return }
                 if let oldFirst = oldRows.first,
@@ -56,12 +61,25 @@ struct ChatTimelineView<RowContent: View>: View {
                    newRows.contains(where: { $0.id == oldFirst.id }),
                    newRows.last?.id == oldRows.last?.id {
                     restorePrependAnchor(oldFirst.id, proxy: proxy)
-                } else {
+                } else if targetRowID == nil {
                     scrollToBottom(proxy, animated: didInitialScroll)
                 }
             }
+            .onChange(of: targetRevision) { _, _ in
+                guard let targetRowID else { return }
+                scrollToTarget(targetRowID, proxy: proxy)
+            }
         }
     }
+
+    private func scrollToTarget(_ id: String, proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+            await Task.yield()
+            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(id, anchor: .center) }
+        }
+    }
+
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
         guard !rows.isEmpty else { return }

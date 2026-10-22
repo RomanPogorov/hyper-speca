@@ -11,12 +11,15 @@ struct NativeRootView: View {
     @EnvironmentObject private var sessions: MultiServerSessionCoordinator
     @StateObject private var store = AgentListStore()
     @StateObject private var discovery = HyperMeshDiscovery.shared
+    @StateObject private var mentionStore = MentionInboxStore()
     @State private var showingSettings = false
     @State private var showingServers = false
     @State private var showingHealth = false
     @State private var showingWeb = false
     @State private var showingNewAgent = false
     @State private var createdAgentToOpen: AgentSummary?
+    @State private var showingMentions = false
+    @State private var mentionDestination: MentionChatDestination?
     @State private var query = ""
     @State private var navigationMode = PhoneNavigationMode.recent
     @State private var expandedProjectIDs: Set<String> = []
@@ -127,6 +130,10 @@ struct NativeRootView: View {
                     ServerSwitcherMenu { showingServers = true }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    MentionInboxButton(unread: mentionStore.unread) { showingMentions = true }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if let baseURL {
                             NavigationLink { NewsReaderView(baseURL: baseURL) } label: { Label("News", systemImage: "newspaper") }
@@ -154,6 +161,7 @@ struct NativeRootView: View {
             }
         }
         .task { sessions.activate(profiles: servers.profiles, serverStore: servers); switchServer() }
+        .task(id: servers.selectedID) { if let baseURL { await mentionStore.monitor(baseURL: baseURL) } }
         .onChange(of: servers.profiles) { _, profiles in sessions.activate(profiles: profiles, serverStore: servers) }
         .onChange(of: selectedWorkspace.agents) { _, agents in store.agents = agents }
         .onChange(of: selectedWorkspace.error) { _, error in store.error = error }
@@ -165,6 +173,12 @@ struct NativeRootView: View {
         .navigationDestination(item: $createdAgentToOpen) { agent in
             if let baseURL { NativeChatView(agent: agent, baseURL: baseURL, profileID: servers.selectedID, onRead: { Task { await refreshSelected() } }, onNextUnread: { openNextUnread(after: agent.id) }).id(agent.id) }
         }
+        .navigationDestination(item: $mentionDestination) { destination in
+            NativeChatView(agent: destination.agent, baseURL: servers.selectedURL!, profileID: servers.selectedID, targetMessageIdx: destination.messageIdx, onRead: { Task { await refreshSelected(); await mentionStore.load(baseURL: servers.selectedURL!, showLoading: false) } }, onNextUnread: { openNextUnread(after: destination.agent.id) })
+                .id(destination.id)
+        }
+        .sheet(isPresented: $showingMentions) { if let baseURL { MentionInboxView(store: mentionStore, baseURL: baseURL, select: openMention) } }
+
         .sheet(isPresented: $showingNewAgent) { if let baseURL { NewAgentView(baseURL: baseURL, initialProjectID: newAgentProjectID) { created in showingNewAgent = false; openCreatedAgent(created) } } }
         .sheet(isPresented: $showingHealth) { if let healthURL = servers.trustedHealthURL { HealthSyncView(baseURL: healthURL, serverName: servers.trustedHealthProfile.name) } }
         .sheet(isPresented: $showingSettings) { ServerProfilesView() }
@@ -203,6 +217,18 @@ struct NativeRootView: View {
         }
         .contextMenu { Button { pin(agent, !agent.pinned) } label: { Label(agent.pinned ? "Unpin" : "Pin", systemImage: agent.pinned ? "pin.slash" : "pin") } }
     }
+
+    private func openMention(_ mention: MobileMention) {
+        guard let baseURL else { return }
+        showingMentions = false
+        Task {
+            var agent = selectedWorkspace.agents.first { $0.id == mention.agentId }
+            if agent == nil { agent = try? await APIClient(baseURL: baseURL).agent(id: mention.agentId).summary }
+            guard let agent else { return }
+            mentionDestination = MentionChatDestination(mentionID: mention.id, agent: agent, messageIdx: mention.messageIdx)
+        }
+    }
+
 
     private func openNextUnread(after currentID: String) {
         Task {

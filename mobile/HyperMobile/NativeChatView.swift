@@ -15,6 +15,7 @@ struct NativeChatView: View {
     let agent: AgentSummary
     let baseURL: URL
     let profileID: String?
+    let targetMessageIdx: Int?
     let onRead: () -> Void
     let onNextUnread: (() -> Void)?
     let onShowChats: (() -> Void)?
@@ -42,11 +43,15 @@ struct NativeChatView: View {
     @State private var canvasDismissed = false
     @State private var injectText = ""
     @State private var injectEvery = 1
+    @State private var highlightedEventIdx: Int?
+    @State private var targetRevision = 0
+    @State private var targetEventIdx: Int?
 
-    init(agent: AgentSummary, baseURL: URL, profileID: String? = nil, onRead: @escaping () -> Void, onNextUnread: (() -> Void)? = nil, onShowChats: (() -> Void)? = nil) {
+    init(agent: AgentSummary, baseURL: URL, profileID: String? = nil, targetMessageIdx: Int? = nil, onRead: @escaping () -> Void, onNextUnread: (() -> Void)? = nil, onShowChats: (() -> Void)? = nil) {
         self.agent = agent
         self.baseURL = baseURL
         self.profileID = profileID
+        self.targetMessageIdx = targetMessageIdx
         self.onRead = onRead
         self.onNextUnread = onNextUnread
         self.onShowChats = onShowChats
@@ -88,6 +93,8 @@ struct NativeChatView: View {
                 hasOlder: store.hasOlder,
                 isLoadingOlder: store.isLoadingOlder,
                 loadOlder: { await store.loadOlder(baseURL: baseURL, agentID: agent.id) },
+                targetRowID: targetEventIdx.map { "event-\($0)" },
+                targetRevision: targetRevision,
                 dismissKeyboard: { focused = false }
             ) { row in
                 Group {
@@ -100,6 +107,16 @@ struct NativeChatView: View {
                 .frame(maxWidth: 860)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 5)
+                .background {
+                    if case .event(let event) = row.kind, event.idx == highlightedEventIdx {
+                        RoundedRectangle(cornerRadius: 14).fill(Color.orange.opacity(0.18))
+                    }
+                }
+                .overlay {
+                    if case .event(let event) = row.kind, event.idx == highlightedEventIdx {
+                        RoundedRectangle(cornerRadius: 14).stroke(Color.orange.opacity(0.75), lineWidth: 2)
+                    }
+                }
             }
             .scrollDismissesKeyboard(.immediately)
                 AttachmentComposer(text: $draft, baseURL: baseURL, attachments: $attachments, focused: $focused, resetID: composerResetID, sending: store.isSending, running: store.isRunning, injectText: injectText, injectEvery: injectEvery, send: sendAction, stop: stopAction)
@@ -141,7 +158,16 @@ struct NativeChatView: View {
             let resolvedProfileID = profileID ?? MobileStateCache.fallbackProfileID(for: baseURL)
             draft = MobileStateCache.shared.draft(profileID: resolvedProfileID, agentID: agent.id)
             canvasDismissed = MobileStateCache.shared.isCanvasHidden(profileID: resolvedProfileID, agentID: agent.id)
-            await store.start(baseURL: baseURL, agentID: agent.id, profileID: resolvedProfileID)
+            await store.start(baseURL: baseURL, agentID: agent.id, profileID: resolvedProfileID, aroundMessageIdx: targetMessageIdx)
+            if let target = store.historyAnchorID {
+                targetEventIdx = target
+                highlightedEventIdx = target
+                targetRevision += 1
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(3))
+                    if highlightedEventIdx == target { highlightedEventIdx = nil }
+                }
+            }
             canvasEvents.start(baseURL: baseURL, agentID: agent.id)
         }
         .onChange(of: draft) { _, value in MobileStateCache.shared.updateDraft(value, profileID: profileID ?? MobileStateCache.fallbackProfileID(for: baseURL), agentID: agent.id) }
@@ -262,6 +288,7 @@ struct NativeChatView: View {
     private var stopAction: () -> Void { { stop() } }
     private var modelDisplayName: String { currentModel.split(separator: ":", maxSplits: 1).last.map(String.init) ?? currentModel }
     private func send() {
+        targetEventIdx = nil
         let value = draft, selected = attachments
         guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selected.isEmpty else { return }
         // Clear and recreate the native text field before awaiting the network.

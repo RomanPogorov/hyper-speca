@@ -123,12 +123,31 @@ struct APIClient {
         try await request(path: "mentions/people")
     }
 
+    func mentions(unreadOnly: Bool = true, limit: Int = 50) async throws -> MentionsResponse {
+        var components = URLComponents(url: url("api/mobile/v1/mentions"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "unreadOnly", value: unreadOnly ? "true" : "false"),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        return try await request(url: components.url!)
+    }
 
-    func events(agentID: String, after: Int? = nil, before: Int? = nil, limit: Int = 100) async throws -> EventsResponse {
+    func markMentionRead(id: Int) async throws -> MentionReadResponse {
+        try await request(path: "api/mobile/v1/mentions/\(id)/read", method: "POST", body: [String: String]())
+    }
+
+    func agent(id: String) async throws -> MobileAgentDetail {
+        let response: MobileAgentResponse = try await request(path: "api/mobile/v1/agents/\(escaped(id))")
+        return response.agent
+    }
+
+
+    func events(agentID: String, after: Int? = nil, before: Int? = nil, aroundMessageIdx: Int? = nil, limit: Int = 100) async throws -> EventsResponse {
         var components = URLComponents(url: url("api/mobile/v1/agents/\(escaped(agentID))/events"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "limit", value: String(limit))]
         if let after { items.append(URLQueryItem(name: "after", value: String(after))) }
         if let before { items.append(URLQueryItem(name: "before", value: String(before))) }
+        if let aroundMessageIdx { items.append(URLQueryItem(name: "aroundMessageIdx", value: String(aroundMessageIdx))) }
         components.queryItems = items
         return try await request(url: components.url!)
     }

@@ -12,6 +12,7 @@ struct NativePadRootView: View {
     @EnvironmentObject private var sessions: MultiServerSessionCoordinator
     @StateObject private var store = AgentListStore()
     @StateObject private var discovery = HyperMeshDiscovery.shared
+    @StateObject private var mentionStore = MentionInboxStore()
     @State private var selection: AgentSummary?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var query = ""
@@ -23,6 +24,8 @@ struct NativePadRootView: View {
     @State private var showingHealth = false
     @State private var showingNewAgent = false
     @State private var newAgentProjectID = ""
+    @State private var showingMentions = false
+    @State private var mentionDestination: MentionChatDestination?
     @State private var needsLogin = false
     @State private var loginPassword = ""
     @State private var loginError: String?
@@ -117,6 +120,7 @@ struct NativePadRootView: View {
                     ServerSwitcherMenu { showingServers = true }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    MentionInboxButton(unread: mentionStore.unread) { showingMentions = true }
                     Menu {
                         if let authUser { Text(authUser.name) }
                         Button("News", systemImage: "newspaper") { showingNews = true }
@@ -133,7 +137,11 @@ struct NativePadRootView: View {
                 }
             }
         } detail: {
-            if let agent = selection, let baseURL {
+            if let destination = mentionDestination, let baseURL {
+                NativeChatView(agent: destination.agent, baseURL: baseURL, profileID: servers.selectedID, targetMessageIdx: destination.messageIdx, onRead: { Task { await refreshSelected(); await mentionStore.load(baseURL: baseURL, showLoading: false) } }, onShowChats: { withAnimation(.snappy(duration: 0.2)) { columnVisibility = .all } })
+                    .id(destination.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let agent = selection, let baseURL {
                 NativeChatView(agent: agent, baseURL: baseURL, profileID: servers.selectedID, onRead: { Task { await refreshSelected() } }, onShowChats: { withAnimation(.snappy(duration: 0.2)) { columnVisibility = .all } })
                     .id(agent.id)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -145,11 +153,13 @@ struct NativePadRootView: View {
         .navigationSplitViewStyle(.balanced)
         .toolbar(selection == nil ? .visible : .hidden, for: .navigationBar)
         .task { sessions.activate(profiles: servers.profiles, serverStore: servers); switchServer() }
+        .task(id: servers.selectedID) { if let baseURL { await mentionStore.monitor(baseURL: baseURL) } }
         .onChange(of: servers.profiles) { _, profiles in sessions.activate(profiles: profiles, serverStore: servers) }
         .onChange(of: selectedWorkspace.agents) { _, agents in store.agents = agents }
         .onChange(of: selectedWorkspace.error) { _, error in store.error = error }
         .onChange(of: selection?.id) { _, value in
             MobileStateCache.shared.updateSelection(profileID: servers.selectedID, agentID: value)
+            if value != mentionDestination?.agent.id { mentionDestination = nil }
             columnVisibility = value == nil ? .all : .detailOnly
         }
         .onChange(of: query) { _, value in MobileStateCache.shared.updateListState(profileID: servers.selectedID, folder: nil, query: value) }
@@ -163,6 +173,8 @@ struct NativePadRootView: View {
             }
         }
         .onChange(of: servers.auth(for: servers.selectedID).status) { _, _ in needsLogin = shouldRequireLogin }
+        .sheet(isPresented: $showingMentions) { if let baseURL { MentionInboxView(store: mentionStore, baseURL: baseURL, select: openMention) } }
+
         .sheet(isPresented: $showingSettings) { ServerProfilesView() }
         .sheet(isPresented: $showingServers) { ServerProfilesView() }
         .sheet(isPresented: $showingHealth) { if let healthURL = servers.trustedHealthURL { HealthSyncView(baseURL: healthURL, serverName: servers.trustedHealthProfile.name) } }
@@ -174,6 +186,20 @@ struct NativePadRootView: View {
         .confirmationDialog("Sign out of Hyper?", isPresented: $showingLogoutConfirmation, titleVisibility: .visible) {
             Button("Sign out", role: .destructive) { logout() }
             Button("Cancel", role: .cancel) { }
+        }
+    }
+
+
+    private func openMention(_ mention: MobileMention) {
+        guard let baseURL else { return }
+        showingMentions = false
+        Task {
+            var agent = selectedWorkspace.agents.first { $0.id == mention.agentId }
+            if agent == nil { agent = try? await APIClient(baseURL: baseURL).agent(id: mention.agentId).summary }
+            guard let agent else { return }
+            selection = agent
+            mentionDestination = MentionChatDestination(mentionID: mention.id, agent: agent, messageIdx: mention.messageIdx)
+            columnVisibility = .detailOnly
         }
     }
 
