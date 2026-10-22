@@ -36,6 +36,14 @@ export default async function (ctx: Context, _session: Session | null, opts: { s
         }
     }
 
+    // hyper-code2: a rescan keeps what this run already compiled. The fresh records came back
+    // unbuilt, so the next page load started one Tailwind per sheet at once (11, load 110) after
+    // every route or script save; `styles.rebuild` is what recompiles after a change.
+    const previous = new Map((ctx.state.procs.styles ?? []).map((s: any) => [s.key, s]));
+    for (const style of draft.state.procs.styles) {
+        const built = (previous.get(style.key) as any)?.built;
+        if (built) style.built = built;
+    }
     ctx.state.procs.styles = draft.state.procs.styles;
     ctx.state.procs.http.middleware = draft.state.procs.http.middleware;
     ctx.state.procs.http.routes = draft.state.procs.http.routes;
