@@ -3,6 +3,11 @@
 // agent_triggers row (and any legacy agent_watches row still active) is copied over with its
 // history; the copied active rows are cancelled in the old tables so nothing fires twice.
 // The old tables stay until a separate, explicit drop.
+//
+// hyper-code2: `left(x || '', n)`, not `left(x, n)`. On a compressed text Postgres 18.2 decompresses only
+// the prefix `left` needs; when that prefix ends inside a multibyte (Cyrillic) character it reports
+// "invalid byte sequence for encoding UTF8" on perfectly valid data, and the boot failed on one prompt.
+// The concatenation detoasts the whole value first.
 const upSql = `
 CREATE TABLE IF NOT EXISTS job_runs (
     id BIGSERIAL PRIMARY KEY,
@@ -23,7 +28,7 @@ SELECT t.id,
        CASE WHEN t.kind = 'watch' THEN 'subscription' ELSE 'schedule' END,
        t.kind,
        jsonb_strip_nulls(jsonb_build_object(
-           'title', left(t.prompt, 120),
+           'title', left(t.prompt || '', 120),
            'expression', t.config->'expression',
            'timezone', t.timezone,
            'predicate', t.config->'predicate',
@@ -55,7 +60,7 @@ UPDATE agent_triggers SET status = 'cancelled', next_at = NULL, claim_token = NU
 INSERT INTO jobs (id, kind, runner, spec, state, status, owner_id, created_by, agent_id, prompt,
                   execution_id, next_at, created_at, started_at, deadline_at, updated_at)
 SELECT w.id, 'subscription', 'watch',
-       jsonb_build_object('title', left(w.reason, 120), 'predicate', w.predicate, 'opts', w.opts, 'everyMs', w.interval_ms, 'mode', 'once'),
+       jsonb_build_object('title', left(w.reason || '', 120), 'predicate', w.predicate, 'opts', w.opts, 'everyMs', w.interval_ms, 'mode', 'once'),
        jsonb_build_object('attempts', w.attempts),
        'running', a.created_by, 'migration', w.agent_id, w.reason,
        w.id, w.next_check_at, w.created_at, w.created_at, w.timeout_at, w.created_at
