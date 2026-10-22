@@ -63,6 +63,20 @@ async function compile(ctx: Context, opts: {
     // no external component-theme runtime or generated component layer.
     const wrapper = `@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n${sources}\n@import ${JSON.stringify(opts.abs)};\n`;
     if (!opts.force && record?.built === output && await Bun.file(output).exists()) return output;
+    // hyper-code2: right after a restart nothing is built yet, and the first page asked for all eleven
+    // sheets at once — eleven Tailwinds scanning the whole workspace in parallel, pages unstyled until
+    // the last one finished. The sheet from the previous run is served at once instead, and ONE rebuild
+    // of every sheet, one after another, follows in the background; its `styles` event makes open tabs
+    // re-fetch, so a class added since the last run lands a moment later rather than never.
+    if (!opts.force && record && !record.built && await Bun.file(output).exists()) {
+        record.built = output;
+        const procs = ctx.state.procs as any;
+        if (!procs.stylesBootRebuild) {
+            procs.stylesBootRebuild = true;
+            queueMicrotask(() => { ctx.fns.procs.styles.rebuild({}).catch(() => undefined); });
+        }
+        return output;
+    }
     await Bun.write(input, wrapper);
 
     // Tailwind resolves `@import "tailwindcss"` from the input file's directory
