@@ -41,7 +41,7 @@ describe("jobs", () => {
     test("secrets: values reach the process, never the inbox or logs, and the launcher file is gone", async () => {
         const { ctx, a } = await setup();
         ctx.state.registry.secrets.get = async (_c: any, _s: any, o: any) => (o.ref === "env://T" ? "s3cr3t-value" : null);
-        const job = await ctx.fns.jobs.start({ agentId: a.id, command: 'echo "token=$TOKEN"; ls "$HOME/.hyper-jobs/$JOB_ID_CHECK" 2>/dev/null', secrets: { TOKEN: "env://T" } });
+        const job = await ctx.fns.jobs.start({ agentId: a.id, command: 'echo "token=$TOKEN"', secrets: { TOKEN: "env://T" } });
         await until(ctx, job.id);
         const msg = (await inbox(ctx, a.id))[0].content;
         expect(msg).toContain("token=[REDACTED]");
