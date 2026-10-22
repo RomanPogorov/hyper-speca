@@ -5,7 +5,14 @@ import { resolve } from "node:path";
 
 export type ServiceTarget = "launchd-system" | "launchd-user" | "systemd-user" | "systemd-system";
 
-export interface ServiceFile { target: ServiceTarget; path: string; content: string; install: string[]; uninstall: string[]; check: string[] }
+export interface ServiceFile { target: ServiceTarget; name: string; path: string; content: string; install: string[]; uninstall: string[]; check: string[] }
+
+// One hyperd per user, so the service name carries the user — the scheme this machine's other services use
+// (com.hyper.<user>, com.hyper.<user>-pf). launchd labels are machine-wide names, so they always say whose
+// daemon it is; a user systemd unit already lives in that user's own namespace and stays `hyperd`.
+const slug = (user: string) => user.replace(/[^A-Za-z0-9.-]/g, "-");
+export const launchdLabel = (user: string) => `com.hyper.${slug(user)}-hyperd`;
+export const systemdUnit = (target: "systemd-user" | "systemd-system", user: string) => target === "systemd-system" ? `hyperd-${slug(user)}` : "hyperd";
 
 // systemd: quote an argument that has spaces or quotes; "%" is a specifier and must be doubled
 const q = (s: string) => /[\s"\\]/.test(s) ? `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"` : s.replace(/%/g, "%%");
@@ -21,7 +28,7 @@ export function serviceFile(target: ServiceTarget, o: { bun?: string; repo?: str
     const main = `${repo}/hyperd/main.ts`;
     const log = `${home}/.hyper/run/hyperd/daemon.log`;
     if (target === "launchd-system" || target === "launchd-user") {
-        const label = "com.hyper.hyperd";
+        const label = launchdLabel(user);
         const system = target === "launchd-system";
         const path = system ? `/Library/LaunchDaemons/${label}.plist` : `${home}/Library/LaunchAgents/${label}.plist`;
         const content = `<?xml version="1.0" encoding="UTF-8"?>
@@ -41,11 +48,12 @@ ${system ? `  <key>UserName</key><string>${xml(user)}</string>\n` : ""}  <key>Pr
 `;
         const domain = system ? "system" : "gui/$(id -u)";
         const sudo = system ? "sudo " : "";
+        const name = `${label}.plist`;
         return {
-            target, path, content,
+            target, name, path, content,
             install: [
                 `mkdir -p ${home}/.hyper/run/hyperd`,
-                system ? `sudo install -m 644 -o root -g wheel hyperd.plist ${path}` : `install -m 644 hyperd.plist ${path}`,
+                system ? `sudo install -m 644 -o root -g wheel ${name} ${path}` : `install -m 644 ${name} ${path}`,
                 `${sudo}launchctl bootstrap ${domain} ${path}`,
             ],
             uninstall: [`${sudo}launchctl bootout ${domain}/${label}`, `${sudo}rm ${path}`],
@@ -53,7 +61,9 @@ ${system ? `  <key>UserName</key><string>${xml(user)}</string>\n` : ""}  <key>Pr
         };
     }
     const system = target === "systemd-system";
-    const path = system ? "/etc/systemd/system/hyperd.service" : `${home}/.config/systemd/user/hyperd.service`;
+    const unit = systemdUnit(target, user);
+    const name = `${unit}.service`;
+    const path = system ? `/etc/systemd/system/${name}` : `${home}/.config/systemd/user/${name}`;
     // KillMode=process: stopping hyperd must not take its holders (and your services) down with it.
     const content = `[Unit]
 Description=hyperd process supervisor
@@ -75,14 +85,14 @@ WantedBy=${system ? "multi-user.target" : "default.target"}
 `;
     const sc = system ? "sudo systemctl" : "systemctl --user";
     return {
-        target, path, content,
+        target, name, path, content,
         install: [
-            system ? `sudo install -m 644 hyperd.service ${path}` : `mkdir -p ${home}/.config/systemd/user && install -m 644 hyperd.service ${path}`,
+            system ? `sudo install -m 644 ${name} ${path}` : `mkdir -p ${home}/.config/systemd/user && install -m 644 ${name} ${path}`,
             ...(system ? [] : [`loginctl enable-linger ${user}   # keep user services running without a login session`]),
-            `${sc} daemon-reload`, `${sc} enable --now hyperd`,
+            `${sc} daemon-reload`, `${sc} enable --now ${unit}`,
         ],
-        uninstall: [`${sc} disable --now hyperd`, `${system ? "sudo " : ""}rm ${path}`, `${sc} daemon-reload`],
-        check: [`${sc} status hyperd --no-pager`, `${bun} ${repo}/hyperd/cli.ts status`],
+        uninstall: [`${sc} disable --now ${unit}`, `${system ? "sudo " : ""}rm ${path}`, `${sc} daemon-reload`],
+        check: [`${sc} status ${unit} --no-pager`, `${bun} ${repo}/hyperd/cli.ts status`],
     };
 }
 

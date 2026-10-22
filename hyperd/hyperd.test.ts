@@ -186,7 +186,10 @@ describe("install", () => {
     const o = { bun: "/usr/local/bin/bun", repo: "/srv/hyper & co", user: "ann", home: "/home/ann" };
     test("launchd system plist runs as the user, survives hyper (own process group) and escapes XML", async () => {
         const f = serviceFile("launchd-system", o);
-        expect(f.path).toBe("/Library/LaunchDaemons/com.hyper.hyperd.plist");
+        expect(f.path).toBe("/Library/LaunchDaemons/com.hyper.ann-hyperd.plist");
+        expect(f.install.join("\n")).toContain("install -m 644 -o root -g wheel com.hyper.ann-hyperd.plist");
+        expect(serviceFile("launchd-user", o).path).toBe("/home/ann/Library/LaunchAgents/com.hyper.ann-hyperd.plist");
+        expect(serviceFile("launchd-system", { ...o, user: "a b" }).name).toBe("com.hyper.a-b-hyperd.plist");
         expect(f.content).toContain("<key>UserName</key><string>ann</string>");
         expect(f.content).toContain("<string>/srv/hyper &amp; co/hyperd/main.ts</string>");
         expect(f.content).toContain("<key>AbandonProcessGroup</key><true/>");
@@ -206,6 +209,8 @@ describe("install", () => {
         expect(f.content).not.toContain("User=");
         expect(f.install.join("\n")).toContain("enable-linger ann");
         expect(serviceFile("systemd-system", o).content).toContain("User=ann");
+        expect(serviceFile("systemd-system", o).path).toBe("/etc/systemd/system/hyperd-ann.service");
+        expect(serviceFile("systemd-system", o).install.join("\n")).toContain("enable --now hyperd-ann");
         expect(f.content).toContain("Environment=HYPERD_SUPERVISED=1");
         expect(serviceFile("launchd-user", o).content).toContain("<key>HYPERD_SUPERVISED</key><string>1</string>");
     });

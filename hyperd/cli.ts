@@ -70,7 +70,7 @@ async function main() {
             // Prints (or writes with --out) the OS service file for hyperd and the commands to install it.
             // It never runs sudo itself: installing a system service is the administrator's step.
             const f = serviceFile((flag("--target") ?? defaultTarget()) as ServiceTarget);
-            const name = f.path.endsWith(".plist") ? "hyperd.plist" : "hyperd.service";
+            const name = f.name;
             const out = flag("--out");
             if (out) { await Bun.write(join(out, name), f.content); console.log(`wrote ${join(out, name)}`); }
             else console.log(`# ${f.path}\n${f.content}`);
