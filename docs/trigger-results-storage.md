@@ -1,6 +1,6 @@
 # Trigger result references
 
-Large predicate JSON (>16,000 UTF-16 units) is written to the existing immutable result store. `agent_trigger_runs.result` holds valid JSON with a bounded preview; additive `result_ref JSONB` holds the structured reference. Small results stay unchanged. False predicates are stored without delivering messages. Predicates are serialized once. Shared `resultStore.prepare` keeps a 2,500-unit preview on success and storage failure; serialization failure retains an explicit placeholder and `storageError`. Neither failure publishes a dangling reference or changes readiness.
+Large predicate JSON (>16,000 UTF-16 units) is written to the existing immutable result store. `job_runs.result` holds valid JSON with a bounded preview; additive `result_ref JSONB` holds the structured reference. Small results stay unchanged. False predicates are stored without delivering messages. Predicates are serialized once. Shared `resultStore.prepare` keeps a 2,500-unit preview on success and storage failure; serialization failure retains an explicit placeholder and `storageError`. Neither failure publishes a dangling reference or changes readiness.
 
 Tool outputs use the same preparation helper but keep their own text semantics, 6,000-unit inline threshold, and bash tail previews. Trigger JSON retains its 16,000-unit threshold. Ref creation remains exclusively in `resultStore.write` after successful storage.
 

@@ -40,6 +40,16 @@ what to do (if anything). Internal refactors without visible effect do not need 
   to `jobs.list`. A command with no output now says "Output: none".
 - `agent.wakeIn` / `agent.wakeUpWhen` are deprecated in favour of `agent.wake` / `agent.watch`.
 
-### Jobs v3: one table for commands, timers and triggers
-- Wake-ups, cron, watches, usage-limit parking and external subscriptions all live in `jobs`; archiving an
-  agent cancels its jobs. Old trigger tables are dropped by migrations (applied at boot).
+### Jobs: background commands, timers and triggers in one table
+- `bash({ background: true })` / `jobs.start` run a command in tmux (locally or over SSH) that survives a Hyper
+  restart; the agent gets one message with exit code, duration and output tail when it ends. `jobs.list`,
+  `jobs.get`, `jobs.logs` (secrets masked), `jobs.cancel` (silent). A "to background" button moves a running
+  bash call into a job. Jobs that end within 2 s arrive in one turn.
+- Wake-ups (`agent.wake`), cron (`agent.cron`), watches (`agent.watch`), usage-limit parking and external
+  subscriptions (`agent.attach`) are rows of the same `jobs` table, with firings audited in `job_runs`.
+  Archiving an agent cancels its jobs; stopping a turn does not.
+- Every runtime message to an agent (job end, trigger, watch, attachment, team update) goes through
+  `agent.deliver`: message, state and wake-up commit in one transaction, so none is lost or doubled.
+- Upgrade: migrations run at boot, copy rows from `agent_triggers`, `agent_trigger_runs`, `agent_watches`,
+  `agent_attachments` and `agents.wake_at` into `jobs` and drop the old tables. Nothing to do by hand.
+  Code that read those tables directly must use `jobs.list` / `agent.triggers`. Docs: `docs/jobs.md`.

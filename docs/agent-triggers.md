@@ -43,9 +43,9 @@ Legacy `wakeAt`, `wakeIn`, `wakeUpWhen`, and `cancelWake` calls are compatibilit
 
 ## Persistence and delivery
 
-`agent_triggers` stores the trigger definition, lifecycle, next due time, claim token, timeout, and watch edge state. `agent_trigger_runs` is the durable execution history and idempotency record. The main agent worker includes the earliest active trigger in its sleep deadline and atomically claims due rows with `FOR UPDATE SKIP LOCKED`.
+Triggers are rows of the `jobs` table (`kind = 'schedule'`, runner `at`, `cron` or `watch`); each firing is a `job_runs` row, the durable execution history and idempotency record. `jobs.poll`, called by the agent worker on every pass, claims due rows with a short lease (`FOR UPDATE SKIP LOCKED`) and runs them through `jobs.tickSchedule`. The prompt, the job's new state and the `job_runs` row commit in one transaction through `agent.deliver`, so a retry never prompts twice and a cancel that commits first wins. See [jobs](jobs.md) for the whole table, including background commands.
 
-A firing appends a synthetic user-role message with `message_type="trigger"` and `excluded_from_cursor=true` to the existing agent session, then sets `agents.next_run_at`. It never creates a fresh conversation. One-shot triggers complete; cron triggers calculate their next wall-clock occurrence; failed checks use bounded retry. Abandoned claims are recovered after ten minutes.
+A firing appends a synthetic user-role message with `message_type="trigger"` and `excluded_from_cursor=true` to the existing agent session, then sets `agents.next_run_at`. It never creates a fresh conversation. One-shot triggers complete; cron triggers calculate their next wall-clock occurrence; failed checks use bounded retry. Predicate errors back off from 1 to 15 minutes; an expired lease is simply claimed again.
 
 Cron uses explicit IANA timezones. If the process was unavailable at a scheduled time, one due occurrence is delivered on recovery and the following occurrence is calculated from the recovery time, so missed runs do not create an unbounded backlog.
 

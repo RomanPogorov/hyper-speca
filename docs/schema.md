@@ -9,10 +9,10 @@
 <thead><tr style="text-align:left;border-bottom:2px solid #e5e7eb">
 <th style="padding:6px 8px">таблица</th><th style="padding:6px 8px">кол.</th>
 <th style="padding:6px 8px">колонки</th><th style="padding:6px 8px">роль</th></tr></thead><tbody>
-<tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">agents</code></td><td style="padding:6px 8px;color:#6b7280">33</td><td style="padding:6px 8px;color:#374151">id, model, system_prompt, tools, scratchpad, parent_id, fork_offset, visibility, run_state, next_run_at, run_started_at, run_token, run_heartbeat_at, stale_recovery_count, last_processed_msg_idx, reflection, goal, sleep_context, wake_at, …</td><td style="padding:6px 8px;color:#6b7280">агент: личность, конфиг, очередь, renewable lease и фичи</td></tr>
+<tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">agents</code></td><td style="padding:6px 8px;color:#6b7280">33</td><td style="padding:6px 8px;color:#374151">id, model, system_prompt, tools, scratchpad, parent_id, fork_offset, visibility, run_state, next_run_at, run_started_at, run_token, run_heartbeat_at, stale_recovery_count, last_processed_msg_idx, reflection, goal, sleep_context, …</td><td style="padding:6px 8px;color:#6b7280">агент: личность, конфиг, очередь, renewable lease и фичи</td></tr>
 <tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">messages</code></td><td style="padding:6px 8px;color:#6b7280">12</td><td style="padding:6px 8px;color:#374151">agent_id, <b>idx</b>, role, content, ts, tool_calls, tool_call_id, message_type, <b>id</b> bigint identity, excluded_from_llm, excluded_from_cursor, provider_state</td><td style="padding:6px 8px;color:#6b7280">история модели и replayable provider state</td></tr>
 <tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">events</code></td><td style="padding:6px 8px;color:#6b7280">5</td><td style="padding:6px 8px;color:#374151">agent_id, <b>idx</b>, type, payload <i>text</i>, ts</td><td style="padding:6px 8px;color:#6b7280">лента, которую видит человек</td></tr>
-<tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">agent_watches</code></td><td style="padding:6px 8px;color:#6b7280">13</td><td style="padding:6px 8px;color:#374151">id, agent_id, predicate, opts, interval_ms, next_check_at, timeout_at, status, attempts, …</td><td style="padding:6px 8px;color:#6b7280">условные пробуждения</td></tr>
+<tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">jobs</code></td><td style="padding:6px 8px;color:#6b7280">23</td><td style="padding:6px 8px;color:#374151">id, kind, runner, spec, state, status, agent_id, prompt, next_at, lease_token, deadline_at, result, …</td><td style="padding:6px 8px;color:#6b7280">фоновые команды, напоминания, cron, watches, подписки</td></tr>
 <tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">settings</code></td><td style="padding:6px 8px;color:#6b7280">7</td><td style="padding:6px 8px;color:#374151">module, scope_type, scope_id, key, value, is_secret, updated_at</td><td style="padding:6px 8px;color:#6b7280">объявленные настройки</td></tr>
 <tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">kv</code></td><td style="padding:6px 8px;color:#6b7280">2</td><td style="padding:6px 8px;color:#374151">key, value</td><td style="padding:6px 8px;color:#6b7280">служебная память приложения</td></tr>
 <tr style="border-bottom:1px solid #f3f4f6;vertical-align:top"><td style="padding:6px 8px"><code style="background:#f3f4f6;padding:1px 5px;border-radius:4px">oauth_credentials</code></td><td style="padding:6px 8px;color:#6b7280">9</td><td style="padding:6px 8px;color:#374151">provider, access_enc, refresh_enc, expires_at, scopes, metadata, version, …</td><td style="padding:6px 8px;color:#6b7280">зашифрованные токены</td></tr>
@@ -21,8 +21,7 @@
 
 Индексы: `messages(agent_id, idx)`, `messages(agent_id, message_type)`, `messages(id)`,
 BM25 по `messages(id, agent_id, role, content)`, `events(agent_id, idx)`,
-`agents(updated_at DESC)`, `agents(parent_id)`, `agents(wake_at) WHERE NOT NULL`,
-`agent_watches(next_check_at) WHERE status='active'`.
+`agents(updated_at DESC)`, `agents(parent_id)`, `jobs(next_at) WHERE status='running'`.
 
 **Что здесь хорошо.** Одна таблица сообщений с `message_type` вместо зоопарка (решение
 принято сознательно). `idx` выделяется внутри INSERT — гонок нет. `messages.id` (bigint
@@ -31,8 +30,8 @@ identity, появился ради BM25) уже даёт глобальную �
 
 **Что плохо, по убыванию вреда:**
 
-1. **Почти нет внешних ключей.** `agent_watches.agent_id → agents.id` уже объявлен, но
-   `messages.agent_id`, `events.agent_id` и `agents.parent_id` не защищены FK;
+1. **Почти нет внешних ключей.** `messages.agent_id`, `events.agent_id`, `jobs.agent_id` и
+   `agents.parent_id` не защищены FK;
    каскадное удаление основной истории живёт в коде приложения.
 2. **`events.payload` — `text`, а не `jsonb`.** Рядом `messages.tool_calls` уже `jsonb`.
    Разные представления одного и того же вида данных.
@@ -272,12 +271,13 @@ erDiagram
         text preview
         bigint created_at
     }
-    agent_watches {
+    jobs {
         text id PK
         text agent_id FK
-        text predicate
-        jsonb opts
-        bigint next_check_at
+        text kind
+        text runner
+        jsonb spec
+        bigint next_at
         text status
     }
 
@@ -285,7 +285,7 @@ erDiagram
     agents ||--o{ entries : "история"
     agents ||--o{ effects : "внешние действия"
     agents ||--o{ artifacts : "крупные данные"
-    agents ||--o{ agent_watches : "ожидания"
+    agents ||--o{ jobs : "фон и триггеры"
     agents ||--o{ agents : "форк"
     agent_runs ||--o{ entries : "создал"
     agent_runs ||--o{ effects : "выполнял"
@@ -368,7 +368,7 @@ UUIDv7 отвечает за идентичность, `seq` — за полож
 
 ### Остальные таблицы
 
-- `agent_watches` — durable ожидания условий и таймеры;
+- `jobs` / `job_runs` — фоновые команды, напоминания, cron, watches и подписки, плюс журнал срабатываний ([jobs](jobs.md));
 - `settings` — объявленные типизированные настройки со scope;
 - `oauth_credentials` — зашифрованные токены;
 - `functions` — каталог runtime-функций и поисковые индексы;

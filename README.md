@@ -21,6 +21,7 @@ A recording of Health Samurai's **Agents on FHIR working group meeting — Octob
 ## What you can do
 
 - **Work on code with persistent context.** Inspect a repository, edit files, run commands, and return to a conversation later.
+- **Leave work running.** Agents start builds and tests in the background, set reminders, cron schedules and watches, and get one message in the same chat when something ends or fires ([jobs](docs/jobs.md)).
 - **Delegate focused work.** Give agents separate tasks and follow their plans and results without putting every detail into one chat.
 - **Bring tools into the conversation.** Discover plugin capabilities for services such as GitHub, Google Workspace, Telegram, and web search. Individual integrations may require credentials or additional software.
 - **See the output beside the chat.** Open files, documents, diagrams, charts, and plugin views in Canvas.
@@ -172,6 +173,7 @@ bunx tsc --noEmit
 bun test --timeout 15000
 ```
 
+Agents' background commands, reminders, cron schedules and watches are rows of one `jobs` table ([jobs](docs/jobs.md)).
 Services that should outlive Hyper restarts (databases, dev servers, agents' background jobs) can run under
 [hyperd](docs/hyperd.md), a small supervisor in this repo: `bun hyperd/cli.ts install` prints the launchd or
 systemd service for your machine, `bun hyperd/cli.ts doctor` checks it.
