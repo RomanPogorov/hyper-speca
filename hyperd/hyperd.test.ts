@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { call } from "./client.ts";
 import { checkUnit, loadUnitFile } from "./Unit.ts";
+import { serviceFile } from "./service.ts";
 
 const root = mkdtempSync(join(tmpdir(), "hyperd-test-"));
 const home = join(root, "home");
@@ -178,5 +179,41 @@ describe("cleanup", () => {
         expect(u.lastExit.signal ?? u.lastExit.code).toBeDefined();
         const [ev] = (await events("sh", "stopping")).slice(-1);
         expect(ev.signal).toBe("SIGHUP");
+    });
+});
+
+describe("install", () => {
+    const o = { bun: "/usr/local/bin/bun", repo: "/srv/hyper & co", user: "ann", home: "/home/ann" };
+    test("launchd system plist runs as the user, survives hyper (own process group) and escapes XML", async () => {
+        const f = serviceFile("launchd-system", o);
+        expect(f.path).toBe("/Library/LaunchDaemons/com.hyper.hyperd.plist");
+        expect(f.content).toContain("<key>UserName</key><string>ann</string>");
+        expect(f.content).toContain("<string>/srv/hyper &amp; co/hyperd/main.ts</string>");
+        expect(f.content).toContain("<key>AbandonProcessGroup</key><true/>");
+        expect(f.install.join("\n")).toContain("sudo launchctl bootstrap system");
+        if (process.platform === "darwin") {
+            const p = join(root, "t.plist");
+            writeFileSync(p, f.content);
+            expect(Bun.spawnSync(["plutil", "-lint", p]).exitCode).toBe(0);
+        }
+        expect(serviceFile("launchd-user", o).content).not.toContain("UserName");
+    });
+    test("systemd unit keeps holders alive when the daemon stops", () => {
+        const f = serviceFile("systemd-user", o);
+        expect(f.path).toBe("/home/ann/.config/systemd/user/hyperd.service");
+        expect(f.content).toContain("KillMode=process");
+        expect(f.content).toContain('ExecStart=/usr/local/bin/bun "/srv/hyper & co/hyperd/main.ts"');
+        expect(f.content).not.toContain("User=");
+        expect(f.install.join("\n")).toContain("enable-linger ann");
+        expect(serviceFile("systemd-system", o).content).toContain("User=ann");
+    });
+    test("doctor reports a daemon that is not OS-supervised and still passes the PTY check", async () => {
+        const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "doctor"], { env: { ...process.env, HYPERD_HOME: home, HYPERD_UNITS: unitsDir } });
+        const out = r.stdout.toString();
+        expect(out).toMatch(/ok\s+daemon answers/);
+        expect(out).toMatch(/FAIL supervised by the OS/);
+        expect(out).toMatch(/FAIL unit files valid .*broken/);
+        expect(out).toMatch(/ok\s+pty run/);
+        expect(r.exitCode).toBe(1);
     });
 });

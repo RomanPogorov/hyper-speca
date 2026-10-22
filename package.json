@@ -13,7 +13,8 @@
     "test": "bun script/test.ts fast",
     "test:it": "bun script/test.ts it",
     "test:live": "bun script/test.ts live",
-    "test:all": "bun script/test.ts all"
+    "test:all": "bun script/test.ts all",
+    "audit": "bun audit --ignore GHSA-vfj7-8cjw-p6xm --ignore GHSA-rj75-hqrm-r3gf"
   },
   "devDependencies": {
     "@types/bun": "latest",

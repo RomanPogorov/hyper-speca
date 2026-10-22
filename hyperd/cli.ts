@@ -2,7 +2,9 @@
 // hyperd CLI: thin wrapper over the unix-socket API.
 //   bun hyperd/cli.ts status | start <u> | stop <u> | restart <u> | rm <u> | logs <u> [-f] [--offset N]
 //                     run <name> -- <cmd...> | send <u> <text> | attach <u> | events [--after N] [-f] | reload | daemon
+//                     install [--target launchd-system|launchd-user|systemd-user|systemd-system] [--out DIR] | doctor
 import { call, socketPath } from "./client.ts";
+import { defaultTarget, serviceFile, type ServiceTarget } from "./service.ts";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -64,6 +66,43 @@ async function main() {
             return;
         }
         case "daemon": await import("./main.ts"); return;
+        case "install": {
+            // Prints (or writes with --out) the OS service file for hyperd and the commands to install it.
+            // It never runs sudo itself: installing a system service is the administrator's step.
+            const f = serviceFile((flag("--target") ?? defaultTarget()) as ServiceTarget);
+            const name = f.path.endsWith(".plist") ? "hyperd.plist" : "hyperd.service";
+            const out = flag("--out");
+            if (out) { await Bun.write(join(out, name), f.content); console.log(`wrote ${join(out, name)}`); }
+            else console.log(`# ${f.path}\n${f.content}`);
+            console.log(`# install (from ${out ?? "the directory with " + name}):\n${f.install.join("\n")}\n# check:\n${f.check.join("\n")}\n# uninstall:\n${f.uninstall.join("\n")}`);
+            return;
+        }
+        case "doctor": {
+            const checks: Array<[string, boolean, string]> = [];
+            const ok = (name: string, pass: boolean, info = "") => { checks.push([name, pass, info]); };
+            ok("bun", true, Bun.version);
+            let st: any = null;
+            try { st = await call("/status"); ok("daemon answers", true, `pid ${st.pid}, ${socketPath()}`); }
+            catch (e: any) { ok("daemon answers", false, String(e?.message ?? e) + " — start it: bun hyperd/cli.ts install"); }
+            if (st) {
+                const ppid = Number(Bun.spawnSync(["ps", "-o", "ppid=", "-p", String(st.pid)]).stdout.toString().trim());
+                ok("supervised by the OS", ppid === 1, ppid === 1 ? "parent is init/launchd" : `parent pid ${ppid}: dies with it; install the service`);
+                const bad = st.units.filter((u: any) => u.error || u.state === "failed");
+                ok("units healthy", bad.length === 0, bad.length ? bad.map((u: any) => `${u.name}: ${u.error ?? u.state}`).join("; ") : `${st.units.length} units`);
+                const r = await call("/reload", { body: { autostart: false } });
+                ok("unit files valid", r.errors.length === 0, r.errors.join("; ") || `${r.units.length} files`);
+                const name = `doctor-${process.pid}`;
+                try {
+                    await call("/run", { body: { unit: { name, cmd: ["sh", "-c", "tty >/dev/null && echo pty-ok"], pty: true, kind: "task" } } });
+                    let text = "";
+                    for (let i = 0; i < 40 && !text.includes("pty-ok"); i++) { await Bun.sleep(100); text = (await call(`/units/${name}/logs?offset=0`)).text; }
+                    ok("pty run", text.includes("pty-ok"), text.trim().slice(0, 60));
+                } finally { await call(`/units/${name}`, { method: "DELETE" }).catch(() => undefined); }
+            }
+            for (const [n, p, i] of checks) console.log(`${p ? "ok  " : "FAIL"} ${n.padEnd(22)} ${i}`);
+            if (checks.some((c) => !c[1])) process.exitCode = 1;
+            return;
+        }
         default: throw new Error(`unknown command ${cmd}`);
     }
 }

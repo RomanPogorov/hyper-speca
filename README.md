@@ -172,6 +172,10 @@ bunx tsc --noEmit
 bun test --timeout 15000
 ```
 
+Services that should outlive Hyper restarts (databases, dev servers, agents' background jobs) can run under
+[hyperd](docs/hyperd.md), a small supervisor in this repo: `bun hyperd/cli.ts install` prints the launchd or
+systemd service for your machine, `bun hyperd/cli.ts doctor` checks it.
+
 The test suite uses Postgres; it is not an in-memory SQLite-only suite. Some integrations have additional requirements. See the [CI workflow](.github/workflows/test.yml) for the automated test environment.
 
 Key directories:
@@ -183,6 +187,7 @@ Key directories:
 | `plugins/` | Official plugins |
 | `.hyper/` | Project-local runtime extensions |
 | `script/` | Installer, service management, and CLI entry points |
+| `hyperd/` | Process supervisor for services, background jobs and terminal sessions ([docs](docs/hyperd.md)) |
 | `docs/` | Architecture, operations, and design notes |
 
 ## Security

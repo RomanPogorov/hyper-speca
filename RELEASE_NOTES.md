@@ -9,12 +9,16 @@ what to do (if anything). Internal refactors without visible effect do not need 
 - New `hyperd/` daemon: runs services, tasks and terminal sessions from unit files in `~/.hyper/units/`
   (YAML, JSON, TS), with readiness checks, `after` ordering, restart with backoff, logs by offset, an event
   journal, and a CLI (`bun hyperd/cli.ts`). Processes survive restarts of hyper and of hyperd itself.
+- Install as an OS service: `bun hyperd/cli.ts install` prints the launchd (macOS) or systemd (Linux) file
+  for this machine and the commands to install it; `bun hyperd/cli.ts doctor` checks the setup;
+  `bash hyperd/smoke.sh` runs an end-to-end check in a throwaway home. See "Install" in `docs/hyperd.md`.
 - Agents control it through `ctx.fns.hyperd.*` (`status`, `run`, `start`, `stop`, `restart`, `reload`, `logs`,
   `send`, `events`). Docs: `docs/hyperd.md`.
 - Setting `jobs.backend` (`tmux` default | `hyperd`): local background bash jobs run as hyperd units. SSH
   hosts still use tmux. Switch back by setting it to `tmux`.
-- On this instance: `jobs.backend = hyperd`; the test Postgres (`~/.hyper/pg-test`, port 54400) now runs as
-  unit `pg-test`.
+- On this instance: hyperd runs as the system LaunchDaemon `com.hyper.hyperd`, `jobs.backend = hyperd`, and
+  the test Postgres (`~/.hyper/pg-test`, port 54400) runs as unit `pg-test`. Verified across a hyper restart:
+  the service kept its pid and a background job started before the restart reported to the new process.
 
 ### Background jobs are easier for agents to find and use
 - System prompt names every call in full (`ctx.fns.agent.wake/cron/watch`, `jobs.list/cancel`), explains that
