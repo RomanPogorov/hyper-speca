@@ -1,7 +1,7 @@
 /**
  * Lists durable triggers belonging to an agent
  *
- * List one agent’s time, cron and condition triggers with their lifecycle state and next check time. Use to inspect pending, completed, timed-out or cancelled triggers.
+ * List one agent’s reminders (agent.wake), cron schedules (agent.cron) and condition watches (agent.watch) with their lifecycle state, next check time and last run. Use to inspect pending, completed, timed-out or cancelled triggers; cancel with agent.cancelTrigger. The same rows also appear in jobs.list as kind "schedule" with status running instead of active; jobs.list additionally shows background commands.
  * @param opts.id Agent identifier.
  * @param opts.status Lifecycle filter. @default active
  */

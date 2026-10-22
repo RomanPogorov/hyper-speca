@@ -37,7 +37,7 @@ export default async function (
     await ctx.fns.procs.db.run({
         sql: `INSERT INTO jobs (id, kind, runner, spec, state, status, owner_id, created_by, agent_id, prompt, execution_id, next_at, created_at, started_at, deadline_at, updated_at)
               VALUES (?, ?, ?, ?::jsonb, '{}'::jsonb, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        params: [id, opts.runner === "watch" ? "subscription" : "schedule", opts.runner, JSON.stringify(spec), owner.created_by ?? null,
+        params: [id, "schedule", opts.runner, JSON.stringify(spec), owner.created_by ?? null,
             session?.user?.id ?? (session?.agentId ? "agent:" + session.agentId : null), opts.agentId, opts.prompt, id, Math.floor(opts.nextAt), now, now, opts.deadlineAt ?? null, now],
     });
     ctx.fns.agent.wakeWorker({});

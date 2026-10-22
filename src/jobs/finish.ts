@@ -63,7 +63,7 @@ export default async function (
     const tail = result.tail.trimEnd();
     const lines = [label];
     if (row.runner !== "sleep") {
-        lines.push(tail ? `Output tail (${result.bytes} bytes total):\n${tail}` : "(no output)");
+        lines.push(tail ? `Output tail (${result.bytes} bytes total):\n${tail}` : "Output: none (the command printed nothing).");
         if (result.bytes > result.tail.length) lines.push(`Full output: await ctx.fns.jobs.logs({ id: "${opts.id}" })`);
     }
     if (row.prompt) lines.push(`Your instruction for this moment: ${row.prompt}`);

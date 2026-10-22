@@ -13,6 +13,8 @@ export type Job = {
     startedAt: number | null;
     deadlineAt: number | null;
     finishedAt: number | null;
+    /** Runner configuration: title, command/host for bash; expression/timezone for cron; predicate/opts/everyMs/mode for watch; source/events/filter for attach. Secrets are not included. */
+    spec: Record<string, any>;
     /** Exit code, duration, output tail and size once finished. */
     result: { exitCode?: number | null; ms?: number; tail?: string; bytes?: number } | null;
 };

@@ -30,6 +30,7 @@ export default function (
         startedAt: num(r.started_at),
         deadlineAt: num(r.deadline_at),
         finishedAt: num(r.finished_at),
+        spec: (() => { const { secrets: _s, ...rest } = spec; return rest; })(),
         result: json(r.result),
     };
 }

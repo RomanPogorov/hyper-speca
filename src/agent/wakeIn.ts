@@ -1,5 +1,5 @@
 /**
- * Schedules a legacy delayed wake through the unified trigger engine
+ * Deprecated compatibility wrapper kept for old callers; new code calls agent.wake
  *
  * Compatibility wrapper for callers using the old wakeIn API. Creates an agent.wake trigger after a delay. Prefer agent.wake for new code.
  * @param opts.id Target agent identifier.

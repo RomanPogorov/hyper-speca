@@ -1,5 +1,5 @@
 /**
- * Creates a legacy conditional wake through the unified trigger engine
+ * Deprecated compatibility wrapper kept for old callers; new code calls agent.watch
  *
  * Compatibility wrapper for callers using the old wakeUpWhen API. Creates a one-shot agent.watch and returns the legacy result shape. Prefer agent.watch for new code.
  * @param opts.id Target agent identifier.

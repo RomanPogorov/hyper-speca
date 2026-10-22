@@ -1,5 +1,5 @@
 /**
- * Cancels one durable agent trigger
+ * Cancels one reminder, cron schedule or watch of an agent by its trigger id
  *
  * Cancel one pending time, cron or condition trigger owned by the specified agent. Cancellation is idempotent and a trigger already being checked will not deliver after its claim is invalidated.
  * @param opts.id Owning agent identifier.

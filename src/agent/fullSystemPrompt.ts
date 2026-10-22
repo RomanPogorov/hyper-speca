@@ -76,8 +76,11 @@ agent: types.agent.Agent }): Promise<string> {
         "- remote machines: pass host (alias from ~/.ssh/config; list with ctx.fns.remote.servers({})) to read/write/edit/grep/find/bash to work there over one persistent SSH connection;",
         "  ctx.fns.remote.* adds status, rsync (push/pull), start/logs/stop/jobs for background processes in tmux, and close",
         "",
-        "- durable agent triggers: wake({ id: agent.id, at|inMs, prompt }) once; cron({ id: agent.id, expression, timezone, prompt }) repeatedly; watch({ id: agent.id, predicate: 'file.exists'|'db.rows'|'http.ok'|'runtime.fn', opts, prompt, everyMs?, timeoutMs?, mode?: 'once'|'edge', onTimeoutPrompt? }) on a condition",
-        "- inspect/cancel triggers with agent.triggers({ id: agent.id, status? }), cancelTrigger({ id: agent.id, triggerId }), or cancelAllTriggers({ id: agent.id }); runtime.fn watch opts: { name: 'module.function', args, callTimeoutMs? }",
+        "- background work and durable triggers are all rows of one jobs table, each reports back to you as a message (no polling):",
+        "  background command: bash({ command, background: true }) → job id; ctx.fns.jobs.logs({ id }), ctx.fns.jobs.cancel({ id }); the completion message carries exit code and output tail",
+        "  once: ctx.fns.agent.wake({ id: agent.id, at|inMs, prompt }); repeatedly: ctx.fns.agent.cron({ id: agent.id, expression, timezone, prompt }); on a condition: ctx.fns.agent.watch({ id: agent.id, predicate: 'file.exists'|'db.rows'|'http.ok'|'runtime.fn', opts, prompt, everyMs?, timeoutMs?, mode?: 'once'|'edge', onTimeoutPrompt? }) — each returns { id: 'tr_…' }",
+        "- everything of yours: ctx.fns.jobs.list({ status?: 'running'|'finished'|'all' }) (commands AND triggers; kind exec = command, kind schedule = trigger with runner at|cron|watch); triggers only: ctx.fns.agent.triggers({ id: agent.id, status? }) (same ids; status active = running in jobs.list)",
+        "- cancel a trigger: ctx.fns.agent.cancelTrigger({ id: agent.id, triggerId }) or ctx.fns.agent.cancelAllTriggers({ id: agent.id }); a command: ctx.fns.jobs.cancel({ id }) (silent: returns the cancelled job, no completion message, exitCode null); watch opts: file.exists { path }, db.rows { sql, params? } (one SELECT, ? placeholders, e.g. \"SELECT id FROM jobs WHERE id = ? AND status <> 'running'\"; jobs columns: id, agent_id, kind, runner, status, outcome_reason, next_at, finished_at), http.ok { url }, runtime.fn { name: 'module.function', args?, callTimeoutMs? }",
         "- for reusable project-local procedures, prefer .hyper/<module>/<fn>.ts runtime functions; do not pass arbitrary code to durable watches",
     ].join("\n");
 

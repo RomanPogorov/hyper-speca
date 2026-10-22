@@ -1,10 +1,10 @@
 /**
- * Wakes an agent when a durable condition becomes true
+ * Wakes the agent when a condition becomes true: watch for a file to appear, a database query to return rows, a URL to answer or a function to return true
  *
  * Poll a supported condition durably and insert a prompt into the same conversation when it becomes true. once fires once and completes; edge fires on each false-to-true transition and rearms only after the condition becomes false. An optional timeout completes the watch and can insert a separate timeout prompt.
  * @param opts.id Target agent identifier.
  * @param opts.predicate Condition implementation to evaluate.
- * @param opts.opts Predicate-specific options.
+ * @param opts.opts Predicate-specific options: file.exists { path }; db.rows { sql: one SELECT, params? with ? placeholders } (ready when it returns rows, e.g. "SELECT id FROM jobs WHERE id = ? AND status <> 'running'"); http.ok { url } (ready on a 2xx GET); runtime.fn { name: "module.function", args?, callTimeoutMs? } (the function returns { ready: boolean, result? }).
  * @param opts.prompt Prompt inserted when the condition becomes true.
  * @param opts.everyMs Polling interval in milliseconds. @default 300000 @minimum 5000 @maximum 86400000
  * @param opts.timeoutMs Optional lifetime before the watch completes. @minimum 5000 @maximum 2592000000
@@ -19,7 +19,7 @@ export default async function (
         id: string;
         /** Condition implementation to evaluate. */
         predicate: "file.exists" | "db.rows" | "http.ok" | "runtime.fn";
-        /** Predicate-specific options. */
+        /** Predicate-specific options: file.exists { path }; db.rows { sql: one SELECT, params? }; http.ok { url }; runtime.fn { name: "module.function", args?, callTimeoutMs? }. */
         opts: Record<string, any>;
         /** Prompt inserted when the condition becomes true. */
         prompt: string;
@@ -32,7 +32,7 @@ export default async function (
         /** Optional prompt inserted if the watch times out. */
         onTimeoutPrompt?: string;
     },
-): Promise<{ id: string; nextAt: number; timeoutAt: number | null }> {
+): Promise<{ id: string; nextAt: number; hint: string; timeoutAt: number | null }> {
     const id = String(opts.id ?? "").trim();
     const prompt = String(opts.prompt ?? "").trim();
     if (!id || !prompt) throw new Error("agent.watch: id and prompt are required");
@@ -52,5 +52,5 @@ export default async function (
         agentId: id, runner: "watch", prompt, nextAt: now, deadlineAt: timeoutAt,
         spec: { predicate: opts.predicate, opts: opts.opts ?? {}, everyMs, mode, ...(opts.onTimeoutPrompt ? { onTimeoutPrompt: String(opts.onTimeoutPrompt) } : {}) },
     });
-    return { id: made.id, nextAt: now, timeoutAt };
+    return { id: made.id, nextAt: now, timeoutAt, hint: "List: ctx.fns.agent.triggers({ id }) or ctx.fns.jobs.list({}); cancel: ctx.fns.agent.cancelTrigger({ id, triggerId }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
 }

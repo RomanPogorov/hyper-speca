@@ -40,7 +40,7 @@ export default async function (
             timeout: opts.timeout, prompt: opts.notify, originToolCallId: (ctx as any).toolRun?.toolCallId,
         });
         return {
-            output: `Started background job ${job.id}${job.host ? ` on ${job.host}` : ""}: ${job.title}\nYou will get a message when it ends — do not wait or poll; end your turn or do other work. Output: ctx.fns.jobs.logs({ id: "${job.id}" }); stop: ctx.fns.jobs.cancel({ id: "${job.id}" }).`,
+            output: `Started background job ${job.id}${job.host ? ` on ${job.host}` : ""}: ${job.title}\nYou will get a message when it ends — do not wait or poll; end your turn or do other work. Output: ctx.fns.jobs.logs({ id: "${job.id}" }); stop: ctx.fns.jobs.cancel({ id: "${job.id}" }); everything running: ctx.fns.jobs.list({}).`,
             isError: false,
         };
     }

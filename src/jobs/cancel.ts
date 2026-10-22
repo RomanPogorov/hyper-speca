@@ -2,7 +2,9 @@
  * Stops a running background job; the agent is not woken for a job it cancelled itself
  *
  * Use when a background command is no longer needed or hangs. Sends Ctrl-C to its tmux session, kills it after a few
- * seconds, and records the job as cancelled. Timers (runner sleep) are simply dropped.
+ * seconds, and records the job as cancelled. Timers (runner sleep) are simply dropped. Cancel is silent: no
+ * completion message follows; the returned job is the result (status "cancelled", outcomeReason "cancelled",
+ * result.exitCode null because the process was killed, not exited).
  * @param opts.id Job id.
  */
 export default async function (
