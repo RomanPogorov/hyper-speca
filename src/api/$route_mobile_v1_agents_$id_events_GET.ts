@@ -1,4 +1,7 @@
-/** Returns a bounded transcript event page for the native mobile chat. */
+/**
+ * Returns a bounded transcript event page for the native mobile chat. `aroundMessageIdx=N` (a mention's messageIdx) returns the
+ * page centred on the event of that message, with `targetEventIdx` to scroll to and `hasNewer` when the tail is not in the page.
+ */
 export default async function (ctx: Context, _session: Session | null, opts: { req: Request; params: Record<string, string> }) {
     const id = opts.params.id!;
     const exists = ((await ctx.fns.procs.db.select({ sql: "SELECT 1 FROM agents WHERE id = ?", params: [id] })) as any[])[0];
@@ -14,7 +17,20 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
     // made a newly opened native chat look reversed/stale and then advanced its
     // polling cursor past the unseen middle. Explicit `after` remains the live
     // incremental path; explicit `before` remains older-history pagination.
-    const events = beforeRaw != null
+    // A mention points at a message index; find the transcript event that rendered it.
+    const aroundRaw = url.searchParams.get("aroundMessageIdx");
+    let targetEventIdx: number | null = null;
+    if (aroundRaw != null && /^\d+$/.test(aroundRaw)) {
+        const rows = await ctx.fns.procs.db.select({
+            sql: `SELECT idx, payload FROM events WHERE agent_id = ? AND payload LIKE ? ORDER BY idx ASC LIMIT 20`,
+            params: [id, `%"messageIdx":${Number(aroundRaw)}%`],
+        }) as any[];
+        const hit = rows.find((r) => { try { return Number(JSON.parse(r.payload)?.messageIdx) === Number(aroundRaw); } catch { return false; } });
+        targetEventIdx = hit ? Number(hit.idx) : null;
+    }
+    const events = targetEventIdx != null
+        ? await ctx.fns.session.getEvents({ id, fromIdx: Math.max(0, targetEventIdx - Math.floor(limit / 2)), limit })
+        : beforeRaw != null
         ? await ctx.fns.session.getEvents({ id, beforeIdx: Math.max(0, Number(beforeRaw) || 0), limit })
         : afterRaw != null
             ? await ctx.fns.session.getEvents({ id, fromIdx: Math.max(0, Number(afterRaw) || 0), limit })
@@ -88,7 +104,10 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
         version: 1,
         agentId: id,
         events: mobileEvents,
-        nextAfter: maxIdx + 1,
+        // A page around a mention may end before the tail: continue from its last event, not past the unseen middle.
+        nextAfter: targetEventIdx != null && events.length ? Number(events[events.length - 1]!.idx) + 1 : maxIdx + 1,
+        targetEventIdx,
+        hasNewer: targetEventIdx != null && events.length > 0 && Number(events[events.length - 1]!.idx) < maxIdx,
         olderBefore: events.length > 0 ? Number(events[0]?.idx ?? 0) : null,
         hasOlder: events.length > 0 && Number(events[0]?.idx ?? 0) > 0,
         isRunning,
