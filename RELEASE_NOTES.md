@@ -12,6 +12,9 @@ what to do (if anything). Internal refactors without visible effect do not need 
 - Install as an OS service: `bun hyperd/cli.ts install` prints the launchd (macOS) or systemd (Linux) file
   for this machine and the commands to install it; `bun hyperd/cli.ts doctor` checks the setup;
   `bash hyperd/smoke.sh` runs an end-to-end check in a throwaway home. See "Install" in `docs/hyperd.md`.
+  Service names carry the user (`com.hyper.<user>-hyperd`, `hyperd-<user>`), so several users on one machine
+  each get their own daemon. Installed as `com.hyper.hyperd` earlier: `sudo launchctl bootout
+  system/com.hyper.hyperd`, remove its plist, install the new one — services keep running and are adopted.
 - Agents control it through `ctx.fns.hyperd.*` (`status`, `run`, `start`, `stop`, `restart`, `reload`, `logs`,
   `send`, `events`). Docs: `docs/hyperd.md`.
 - Setting `jobs.backend` (`tmux` default | `hyperd`): local background bash jobs run as hyperd units. SSH
@@ -52,4 +55,5 @@ what to do (if anything). Internal refactors without visible effect do not need 
   `agent.deliver`: message, state and wake-up commit in one transaction, so none is lost or doubled.
 - Upgrade: migrations run at boot, copy rows from `agent_triggers`, `agent_trigger_runs`, `agent_watches`,
   `agent_attachments` and `agents.wake_at` into `jobs` and drop the old tables. Nothing to do by hand.
+  (Fixed after the first cut: on Postgres 18 the copy failed the boot on prompts with Cyrillic text.)
   Code that read those tables directly must use `jobs.list` / `agent.triggers`. Docs: `docs/jobs.md`.
