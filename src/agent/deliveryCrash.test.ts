@@ -33,40 +33,54 @@ describe("delivery is atomic", () => {
         expect(msgs[0].excluded_from_cursor ?? false).toBe(false);
     });
 
-    test("deliverWatch: a crash while writing the message leaves the watch claimable, not completed", async () => {
+    test("watch: a crash while writing the message leaves the job due, the retry delivers exactly once", async () => {
         const ctx: any = await mkTestCtx();
         const a = await ctx.fns.agent.start({ model: "mock:test" });
         ctx.state.registry.agent.watchPredicate = async () => ({ ready: true, result: { ok: 1 } });
-        await ctx.fns.procs.db.run({
-            sql: "INSERT INTO agent_watches (id, agent_id, predicate, opts, reason, interval_ms, next_check_at, timeout_at, status, attempts, created_at) VALUES ('w1', ?, 'file.exists', '{}', 'file x', 5000, 0, 9999999999999, 'checking', 0, 0)",
-            params: [a.id],
-        });
+        const w = await ctx.fns.agent.watch({ id: a.id, predicate: "file.exists", opts: { path: "x" }, prompt: "file x", everyMs: 5000 });
         failOn(ctx, "INSERT INTO messages");
-        await expect(ctx.fns.agent.deliverWatch({ watchId: "w1", claimed: true, now: 10 })).rejects.toThrow("injected crash");
-        expect((await ctx.fns.procs.db.select({ sql: "SELECT status FROM agent_watches WHERE id = 'w1'" }))[0].status).toBe("checking");
-        expect((await ctx.fns.agent.deliverWatch({ watchId: "w1", claimed: true, now: 10 })).status).toBe("ready");
-        expect((await ctx.fns.procs.db.select({ sql: "SELECT status FROM agent_watches WHERE id = 'w1'" }))[0].status).toBe("completed");
+        await ctx.fns.jobs.poll({ now: w.nextAt + 1 });
+        const kept = (await ctx.fns.procs.db.select({ sql: "SELECT status, lease_token FROM jobs WHERE id = ?", params: [w.id] }))[0];
+        expect(kept.status).toBe("running");
+        expect(await userMessages(ctx, a.id)).toHaveLength(0);
+        // the failed pass rescheduled it (next_at + 10 s); the next due pass delivers once and completes the watch
+        await ctx.fns.jobs.poll({ now: w.nextAt + 20_000 });
+        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0].status).toBe("completed");
+        await ctx.fns.jobs.poll({ now: w.nextAt + 120_000 });
         expect(await userMessages(ctx, a.id)).toHaveLength(1);
     });
 
-    test("trigger: a retry of the same occurrence after delivery is a duplicate, not a second prompt", async () => {
+    test("trigger: a pass that delivered but crashed before finalizing is not delivered twice", async () => {
         const ctx: any = await mkTestCtx();
         const a = await ctx.fns.agent.start({ model: "mock:test" });
         const t = await ctx.fns.agent.wake({ id: a.id, at: Date.now() + 60_000, prompt: "later" });
-        await ctx.fns.procs.db.run({ sql: "UPDATE agent_triggers SET status='checking', claim_token='c1', claimed_at=1 WHERE id=?", params: [t.id] });
-        const once = { triggerId: t.id, claimToken: "c1", prompt: "later", now: 5, occurrence: 100 };
-        expect(await ctx.fns.agent.deliverTriggerPrompt(once)).toBe(true);
-        expect(await ctx.fns.agent.deliverTriggerPrompt(once)).toBe(true);
+        const original = ctx.state.registry.agent.deliver;
+        let crashOnce = true;
+        ctx.state.registry.agent.deliver = async (c: any, s: any, o: any) => {
+            if (!crashOnce) return original(c, s, o);
+            crashOnce = false;
+            // deliver the message (receipt written) without running the job's before/after guard → simulate a crash after the message
+            await original(c, s, { ...o, before: undefined, after: undefined });
+            throw new Error("injected crash");
+        };
+        await ctx.fns.jobs.poll({ now: t.nextAt + 1 });
+        await ctx.fns.jobs.poll({ now: t.nextAt + 20_000 });
         expect(await userMessages(ctx, a.id)).toHaveLength(1);
+        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0].status).toBe("completed");
     });
 
     test("trigger: a cancel committed before delivery wins", async () => {
         const ctx: any = await mkTestCtx();
         const a = await ctx.fns.agent.start({ model: "mock:test" });
         const t = await ctx.fns.agent.wake({ id: a.id, at: Date.now() + 60_000, prompt: "later" });
-        await ctx.fns.procs.db.run({ sql: "UPDATE agent_triggers SET status='cancelled', claim_token='c1' WHERE id=?", params: [t.id] });
-        expect(await ctx.fns.agent.deliverTriggerPrompt({ triggerId: t.id, claimToken: "c1", prompt: "later", now: 5 })).toBe(false);
+        const original = ctx.state.registry.agent.deliver;
+        ctx.state.registry.agent.deliver = async (c: any, s: any, o: any) => {
+            await ctx.fns.agent.cancelTrigger({ id: a.id, triggerId: t.id });
+            return original(c, s, o);
+        };
+        await ctx.fns.jobs.poll({ now: t.nextAt + 1 });
         expect(await userMessages(ctx, a.id)).toHaveLength(0);
+        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0].status).toBe("cancelled");
     });
 
     test("attachment: a crash while writing the message leaves the delivery retryable; the retry delivers once", async () => {

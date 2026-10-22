@@ -5,7 +5,7 @@ test("trigger audit popup shows run count, latest run and error", async () => {
   const ctx: any = await mkTestCtx();
   const agent = await ctx.fns.agent.start({ model: "mock:test" });
   const made = await ctx.fns.agent.wake({ id: agent.id, inMs: 1000, prompt: "audit me" });
-  await ctx.fns.agent.pollTriggers({ now: made.nextAt + 1 });
+  await ctx.fns.jobs.poll({ now: made.nextAt + 1 });
   await Bun.sleep(30);
   const response = await ctx.fns.procs.http.dispatch({ method: "GET", url: `/agent/${agent.id}/trigger/${made.id}` });
   expect(response.status).toBe(200);

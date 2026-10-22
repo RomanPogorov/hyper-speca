@@ -12,8 +12,8 @@ describe("legacy agent schedules", () => {
     expect(tasks).toHaveLength(1);
     expect(tasks[0].fn).toBe("agent.injectScheduledPrompt");
     expect(tasks[0].args).toMatchObject({ agentId: agent.id, text: "Review progress" });
-    await ctx.fns.procs.db.run({ sql: "UPDATE agent_triggers SET next_at=? WHERE id=?", params: [Date.now(), tasks[0].name] });
-    await ctx.fns.agent.pollTriggers({ now: Date.now() + 1 });
+    await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET next_at=? WHERE id=?", params: [Date.now(), tasks[0].name] });
+    await ctx.fns.jobs.poll({ now: Date.now() + 1 });
     await Bun.sleep(30);
     expect((await ctx.fns.session.getMessages({ id: agent.id })).at(-1)).toMatchObject({ role: "user", content: "Review progress" });
     expect((await ctx.fns.agent.cancelTrigger({ id: agent.id, triggerId: tasks[0].name })).cancelled).toBe(true);

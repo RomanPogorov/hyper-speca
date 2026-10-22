@@ -16,21 +16,35 @@ export default async function (
     },
 ): Promise<any[]> {
     const status = opts.status ?? "active";
+    // Old status names over the jobs table: active = running; completed = succeeded; timed_out = timeout.
+    const toJob: Record<string, string> = { active: "running", completed: "succeeded", timed_out: "timeout", cancelled: "cancelled" };
+    const fromJob: Record<string, string> = { running: "active", succeeded: "completed", timeout: "timed_out", cancelled: "cancelled", failed: "cancelled", lost: "cancelled" };
     const params: any[] = [opts.id];
-    let where = "t.agent_id=?";
-    if (status !== "all") { where += " AND t.status=?"; params.push(status); }
-    return await ctx.fns.procs.db.select({
-        sql: `SELECT t.id,t.kind,t.prompt,t.config,t.timezone,t.mode,t.status,
-                     t.next_at AS "nextAt",t.timeout_at AS "timeoutAt",t.last_ready AS "lastReady",
-                     t.attempts,t.last_error AS "lastError",t.created_at AS "createdAt",t.finished_at AS "finishedAt",
-                     r.outcome AS "lastOutcome",r.result AS "lastResult",r.result_ref AS "lastResultRef",r.error AS "lastRunError",
-                     r.scheduled_at AS "lastScheduledAt",r.created_at AS "lastRunAt"
-                FROM agent_triggers t
-                LEFT JOIN LATERAL (
-                    SELECT outcome,result,result_ref,error,scheduled_at,created_at
-                      FROM agent_trigger_runs WHERE trigger_id=t.id ORDER BY id DESC LIMIT 1
-                ) r ON TRUE
-               WHERE ${where} ORDER BY t.created_at DESC`,
+    let where = "j.agent_id = ? AND j.runner IN ('at','cron','watch')";
+    if (status !== "all") { where += " AND j.status = ?"; params.push(toJob[status] ?? status); }
+    const rows = await ctx.fns.procs.db.select({
+        sql: `SELECT j.*, r.outcome AS last_outcome, r.result AS last_result, r.result_ref AS last_result_ref, r.error AS last_run_error,
+                     r.scheduled_at AS last_scheduled_at, r.created_at AS last_run_at
+                FROM jobs j
+                LEFT JOIN LATERAL (SELECT outcome, result, result_ref, error, scheduled_at, created_at FROM job_runs WHERE job_id = j.id ORDER BY id DESC LIMIT 1) r ON TRUE
+               WHERE ${where} ORDER BY j.created_at DESC`,
         params,
     }) as any[];
+    return rows.map((row: any) => {
+        const spec = typeof row.spec === "string" ? JSON.parse(row.spec) : row.spec ?? {};
+        const state = typeof row.state === "string" ? JSON.parse(row.state) : row.state ?? {};
+        const num = (v: any) => (v == null ? null : Number(v));
+        const config = row.runner === "cron" ? { expression: spec.expression }
+            : row.runner === "watch" ? { predicate: spec.predicate, opts: spec.opts ?? {}, everyMs: spec.everyMs, ...(spec.onTimeoutPrompt ? { onTimeoutPrompt: spec.onTimeoutPrompt } : {}) } : {};
+        return {
+            id: row.id, kind: row.runner, prompt: row.prompt, config, timezone: spec.timezone ?? null,
+            mode: row.runner === "cron" ? "repeat" : row.runner === "watch" ? (spec.mode ?? "once") : "once",
+            status: fromJob[row.status] ?? row.status,
+            nextAt: num(row.next_at), timeoutAt: num(row.deadline_at), lastReady: !!state.lastReady,
+            attempts: Number(state.attempts ?? 0), lastError: state.lastError ?? null,
+            createdAt: num(row.created_at), finishedAt: num(row.finished_at),
+            lastOutcome: row.last_outcome ?? null, lastResult: row.last_result ?? null, lastResultRef: row.last_result_ref ?? null,
+            lastRunError: row.last_run_error ?? null, lastScheduledAt: num(row.last_scheduled_at), lastRunAt: num(row.last_run_at),
+        };
+    });
 }

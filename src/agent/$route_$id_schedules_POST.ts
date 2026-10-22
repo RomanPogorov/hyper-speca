@@ -21,10 +21,10 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
         else throw new Error("This interval cannot be represented safely as cron; use a five-field expression");
       }
       const made = await ctx.fns.agent.cron({ id, expression, timezone: String(form.get("timezone") ?? "UTC"), prompt });
-      if (form.get("now") === "1") await ctx.fns.procs.db.run({ sql: "UPDATE agent_triggers SET next_at=?,updated_at=? WHERE id=?", params: [Date.now(), Date.now(), made.id] });
+      if (form.get("now") === "1") await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET next_at=?,updated_at=? WHERE id=? AND status='running'", params: [Date.now(), Date.now(), made.id] });
     } else {
       const triggerId = String(form.get("name") ?? form.get("triggerId") ?? "");
-      if (action === "run") await ctx.fns.procs.db.run({ sql: "UPDATE agent_triggers SET next_at=?,updated_at=? WHERE id=? AND agent_id=? AND kind='cron' AND status='active'", params: [Date.now(), Date.now(), triggerId, id] });
+      if (action === "run") await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET next_at=?,updated_at=? WHERE id=? AND agent_id=? AND runner='cron' AND status='running'", params: [Date.now(), Date.now(), triggerId, id] });
       else if (action === "delete") await ctx.fns.agent.cancelTrigger({ id, triggerId });
       else throw new Error("Legacy pause/resume is not supported; cancel and recreate the trigger");
     }

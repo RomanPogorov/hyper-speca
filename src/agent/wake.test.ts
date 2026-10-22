@@ -10,7 +10,7 @@ describe("legacy wake compatibility", () => {
     expect(scheduled.reason).toBe("check build");
     const active = await ctx.fns.agent.triggers({ id: agent.id });
     expect(active[0]).toMatchObject({ kind: "at", prompt: "check build" });
-    await ctx.fns.agent.pollTriggers({ now: now + 1001 });
+    await ctx.fns.jobs.poll({ now: now + 1001 });
     await Bun.sleep(30);
     const messages = await ctx.fns.session.getMessages({ id: agent.id });
     expect(messages.at(-1)).toMatchObject({ role: "user", content: "check build", message_type: "trigger" });

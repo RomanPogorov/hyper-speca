@@ -33,7 +33,7 @@ export default async function (
     let ref = messages.find(message => message.result_ref?.id === id && matches(message.result_ref))?.result_ref;
     if (!ref) {
         // Resolve ownership on every read before cache or pending-load lookup.
-        const rows = await ctx.fns.procs.db.select({sql:`SELECT to_jsonb(r)->'result_ref' AS ref FROM agent_trigger_runs r JOIN agent_triggers t ON t.id=r.trigger_id WHERE t.agent_id=? AND to_jsonb(r)->'result_ref'->>'id'=? LIMIT 1`,params:[caller.id,id]});
+        const rows = await ctx.fns.procs.db.select({sql:`SELECT to_jsonb(r)->'result_ref' AS ref FROM job_runs r JOIN jobs t ON t.id=r.job_id WHERE t.agent_id=? AND to_jsonb(r)->'result_ref'->>'id'=? LIMIT 1`,params:[caller.id,id]});
         const candidate = rows[0]?.ref as types.agent.ResultRef | undefined;
         if (candidate?.ownerAgentId === caller.id && matches(candidate)) ref = candidate;
     }

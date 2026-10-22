@@ -20,7 +20,7 @@ async function fixture() {
         settings: { getString: async () => instance },
         agent: { current: async () => caller },
         session: { getMessages: async ({ id }: any) => messages[id] ?? [] },
-        procs: { db: { select: async ({ sql, params }: any) => sql.includes('agent_trigger_runs') ? [] : agents[params[0]] ? [agents[params[0]]] : [] } },
+        procs: { db: { select: async ({ sql, params }: any) => sql.includes('job_runs') ? [] : agents[params[0]] ? [agents[params[0]]] : [] } },
         resultStore: {},
     } };
     ctx.fns.resultStore.root = (o: any) => root(ctx, null, o);
@@ -41,7 +41,7 @@ test('trigger ownership is rechecked on cache hit without messages', async () =>
     f.messages.owner = [];
     let linked = true;
     const original = f.ctx.fns.procs.db.select;
-    f.ctx.fns.procs.db.select = async (o: any) => o.sql.includes('agent_trigger_runs')
+    f.ctx.fns.procs.db.select = async (o: any) => o.sql.includes('job_runs')
         ? linked && o.params[0] === 'owner' && (o.params[1] === ref.id || o.params[1] === JSON.stringify(ref)) ? [{ref}] : []
         : original(o);
     expect(await f.api({id:ref.id})).toMatchObject({ok:true,text:'trigger data'});
@@ -253,7 +253,7 @@ test('foreign trigger UUID stays inaccessible on cold cache',async()=>{
     const f=await fixture();const ref=await f.put('private','foreign');
     let reads=0;
     f.ctx.fns.procs.db.select=async(o:any)=>{
-        if(o.sql.includes('agent_trigger_runs')){reads++;expect(o.params[0]).toBe('owner');return [{ref}];}
+        if(o.sql.includes('job_runs')){reads++;expect(o.params[0]).toBe('owner');return [{ref}];}
         return [];
     };
     expect(await f.api({id:ref.id})).toEqual({ok:false,error:'not_found'});

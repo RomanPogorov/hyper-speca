@@ -21,5 +21,10 @@ export default async function (
         prompt: string;
     },
 ): Promise<{ id: string; nextAt: number }> {
-    const id=String(opts.id??"").trim(),prompt=String(opts.prompt??"").trim(),expression=String(opts.expression??"").trim(),timezone=String(opts.timezone??"").trim();if(!id||!prompt||!expression||!timezone)throw new Error("agent.cron: id, expression, timezone and prompt are required");const exists=(await ctx.fns.procs.db.select({sql:"SELECT id FROM agents WHERE id=? AND archived_at IS NULL",params:[id]}))[0];if(!exists)throw new Error(`agent not found: ${id}`);const now=Date.now(),nextAt=await ctx.fns.agent.nextCronAt({expression,timezone,after:now}),triggerId=`tr_${Bun.randomUUIDv7()}`;await ctx.fns.procs.db.run({sql:"INSERT INTO agent_triggers(id,agent_id,kind,prompt,config,timezone,mode,status,next_at,created_at,updated_at) VALUES(?,?,'cron',?,?::jsonb,?,'repeat','active',?,?,?)",params:[triggerId,id,prompt,JSON.stringify({expression}),timezone,nextAt,now,now]});ctx.fns.agent.wakeWorker({});return{id:triggerId,nextAt};
+    const id = String(opts.id ?? "").trim(), prompt = String(opts.prompt ?? "").trim();
+    const expression = String(opts.expression ?? "").trim(), timezone = String(opts.timezone ?? "").trim();
+    if (!id || !prompt || !expression || !timezone) throw new Error("agent.cron: id, expression, timezone and prompt are required");
+    const nextAt = await ctx.fns.agent.nextCronAt({ expression, timezone, after: Date.now() });
+    const made = await ctx.fns.jobs.schedule({ agentId: id, runner: "cron", prompt, nextAt, spec: { expression, timezone } });
+    return { id: made.id, nextAt };
 }

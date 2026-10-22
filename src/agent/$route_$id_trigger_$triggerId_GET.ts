@@ -3,9 +3,9 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
   const agentId = String(opts.params.id ?? "");
   const triggerId = String(opts.params.triggerId ?? "");
   const esc = (value: any) => ctx.fns.procs.ui.escape({ text: value == null ? "" : String(value) });
-  const trigger = (await ctx.fns.procs.db.select({ sql: `SELECT id,kind,prompt,config,timezone,mode,status,next_at AS "nextAt",timeout_at AS "timeoutAt",attempts,last_error AS "lastError",created_at AS "createdAt",finished_at AS "finishedAt" FROM agent_triggers WHERE id=? AND agent_id=?`, params: [triggerId, agentId] }))[0] as any;
+  const trigger = (await ctx.fns.agent.triggers({ id: agentId, status: "all" })).find((t: any) => t.id === triggerId);
   if (!trigger) return new Response("Trigger not found", { status: 404 });
-  const runs = await ctx.fns.procs.db.select({ sql: `SELECT id,scheduled_at AS "scheduledAt",outcome,result,result_ref AS "resultRef",error,created_at AS "createdAt" FROM agent_trigger_runs WHERE trigger_id=? ORDER BY id DESC LIMIT 100`, params: [triggerId] }) as any[];
+  const runs = await ctx.fns.procs.db.select({ sql: `SELECT id,scheduled_at AS "scheduledAt",outcome,result,result_ref AS "resultRef",error,created_at AS "createdAt" FROM job_runs WHERE job_id=? ORDER BY id DESC LIMIT 100`, params: [triggerId] }) as any[];
   const fmt = (value: any) => value == null ? "—" : new Date(Number(value)).toLocaleString();
   const json = (value: any) => { try { return JSON.stringify(value, null, 2); } catch { return String(value ?? ""); } };
   const last = runs[0];

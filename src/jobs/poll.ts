@@ -2,8 +2,9 @@
  * Checks due background jobs and finishes the ones that ended, timed out or vanished
  *
  * Called by the agent worker loop on every pass. Claims due running jobs with a short lease (so two workers never
- * probe the same job), probes bash jobs in their tmux session, ends sleep timers, enforces deadlines and honours
- * cancel requests, then calls jobs.finish which messages the agent. Unreachable SSH hosts are retried with backoff
+ * probe the same job), probes bash jobs in their tmux session, ends sleep timers, runs due wake-ups, cron schedules
+ * and watches (jobs.tickSchedule), enforces deadlines and honours cancel requests, then calls jobs.finish which
+ * messages the agent. Unreachable SSH hosts are retried with backoff
  * and reported as lost only after their deadline.
  * @param opts.now Timestamp in ms; defaults to now.
  * @param opts.limit Maximum jobs per pass. @default 20
@@ -44,6 +45,11 @@ export default async function (
             params: [nextAt, JSON.stringify({ ...state, ...patch }), now, id, token],
         });
         try {
+            if (row.runner === "at" || row.runner === "cron" || row.runner === "watch") {
+                // Schedules commit their own prompt + state + audit in one transaction.
+                await ctx.fns.jobs.tickSchedule({ row, token, now });
+                return;
+            }
             if (row.runner === "sleep") {
                 if (row.cancel_requested_at != null) return await done({ id, status: "cancelled", reason: "cancelled", notify: false, now });
                 if (now >= Number(row.deadline_at)) return await done({ id, status: "succeeded", reason: "sleep", now });
@@ -80,7 +86,8 @@ export default async function (
             return await reschedule(now + (age < 10_000 ? 1_000 : age < 60_000 ? 2_000 : 5_000), { misses: 0 });
         } catch (error: any) {
             await ctx.fns.procs.log.warn({ event: "jobs.poll.failed", msg: String(error?.message ?? error), jobId: id });
-            await reschedule(now + 10_000, { lastError: String(error?.message ?? error).slice(0, 500) }).catch(() => undefined);
+            const schedule = row.runner === "at" || row.runner === "cron" || row.runner === "watch";
+            await reschedule(now + 10_000, { lastError: String(error?.message ?? error).slice(0, 500), ...(schedule ? { occurrence: state.occurrence ?? Number(row.next_at) } : {}) }).catch(() => undefined);
         }
     }));
     const ending = endings.map((e) => e.id);

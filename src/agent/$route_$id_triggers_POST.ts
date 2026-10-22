@@ -21,7 +21,7 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
       await ctx.fns.agent.cancelAllTriggers({ id });
     } else if (action === "run") {
       const triggerId = String(form.get("triggerId") ?? "");
-      await ctx.fns.procs.db.run({ sql: "UPDATE agent_triggers SET next_at=?, updated_at=? WHERE id=? AND agent_id=? AND status='active'", params: [Date.now(), Date.now(), triggerId, id] });
+      await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET next_at=?, updated_at=? WHERE id=? AND agent_id=? AND runner IN ('at','cron','watch') AND status='running'", params: [Date.now(), Date.now(), triggerId, id] });
       ctx.fns.agent.wakeWorker({});
     } else throw new Error("Unsupported trigger action");
     ctx.fns.events.refreshAgentMeta({ agentId: id, section: "automation", reason: "trigger-changed" });

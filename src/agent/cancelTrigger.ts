@@ -15,5 +15,12 @@ export default async function (
         triggerId: string;
     },
 ): Promise<{ cancelled: boolean }> {
-    const now=Date.now();const r=await ctx.fns.procs.db.run({sql:"UPDATE agent_triggers SET status='cancelled',next_at=NULL,claim_token=NULL,claimed_at=NULL,updated_at=?,finished_at=? WHERE id=? AND agent_id=? AND status IN ('active','checking')",params:[now,now,opts.triggerId,opts.id]});ctx.fns.agent.wakeWorker({});return{cancelled:r.changes>0};
+    const now = Date.now();
+    const r = await ctx.fns.procs.db.run({
+        sql: "UPDATE jobs SET status = 'cancelled', outcome_reason = 'cancelled', cancel_requested_at = ?, next_at = NULL, finished_at = ?, updated_at = ? WHERE id = ? AND agent_id = ? AND runner IN ('at','cron','watch') AND status = 'running'",
+        params: [now, now, now, opts.triggerId, opts.id],
+    });
+    ctx.fns.agent.wakeWorker({});
+    ctx.fns.events.refreshAgentMeta({ agentId: opts.id, section: "automation", reason: "trigger-cancel" });
+    return { cancelled: r.changes > 0 };
 }

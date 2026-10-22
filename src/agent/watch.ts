@@ -48,9 +48,9 @@ export default async function (
     const now = Date.now();
     const timeoutAt = opts.timeoutMs == null ? null : now + Math.max(everyMs, Math.min(2592000000, Math.floor(Number(opts.timeoutMs))));
     const mode = opts.mode ?? "once";
-    const triggerId = `tr_${Bun.randomUUIDv7()}`;
-    const config = { predicate: opts.predicate, opts: opts.opts ?? {}, everyMs, ...(opts.onTimeoutPrompt ? { onTimeoutPrompt: String(opts.onTimeoutPrompt) } : {}) };
-    await ctx.fns.procs.db.run({ sql: "INSERT INTO agent_triggers(id,agent_id,kind,prompt,config,mode,status,next_at,timeout_at,created_at,updated_at) VALUES(?,?,'watch',?,?::jsonb,?,'active',?,?,?,?)", params: [triggerId, id, prompt, JSON.stringify(config), mode, now, timeoutAt, now, now] });
-    ctx.fns.agent.wakeWorker({});
-    return { id: triggerId, nextAt: now, timeoutAt };
+    const made = await ctx.fns.jobs.schedule({
+        agentId: id, runner: "watch", prompt, nextAt: now, deadlineAt: timeoutAt,
+        spec: { predicate: opts.predicate, opts: opts.opts ?? {}, everyMs, mode, ...(opts.onTimeoutPrompt ? { onTimeoutPrompt: String(opts.onTimeoutPrompt) } : {}) },
+    });
+    return { id: made.id, nextAt: now, timeoutAt };
 }
