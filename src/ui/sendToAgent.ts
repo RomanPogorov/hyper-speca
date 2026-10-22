@@ -9,7 +9,12 @@ export default async function (ctx: Context, _session: Session | null, opts: {
         /** Identifier of the agent whose scoped setting is used. */ agentId: string;
         /** Text to send to the agent. */ text: string;
         /** Whether to open the agent after sending. */ open?: boolean }) {
-    const agent = (ctx.state as any).agent?.[opts.agentId];
+    let agent = (ctx.state as any).agent?.[opts.agentId];
+    if (!agent) {
+        // Agents are loaded lazily; one that was idle at boot is not in memory until first use.
+        agent = await ctx.fns.session.load({ id: opts.agentId });
+        if (agent) ((ctx.state as any).agent ??= {})[opts.agentId] = agent;
+    }
     if (!agent) throw new Error('agent not found: ' + opts.agentId);
     const text = (opts.text ?? '').trim();
     if (!text) throw new Error('empty text');
