@@ -12,7 +12,7 @@
 //
 // A failed build keeps the site styled: the last good sheet is served and the
 // failure is logged, instead of a 500 that leaves every page unstyled.
-import { mkdir, rename } from "node:fs/promises";
+import { mkdir, realpath, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 // The Tailwind CLI entry inside the framework's own node_modules, run by the
@@ -44,7 +44,15 @@ async function compile(ctx: Context, opts: {
     // sideways. Once per process, and `styles.rebuild` asks for another.
     const record = (ctx.state.procs.styles ?? []).find((s: any) => s.key === opts.key);
     const modules = await ctx.fns.procs.modules.discover({});
-    const sources = [...new Set(modules.map((r: any) => r.dir))].map(dir => `@source ${JSON.stringify(dir)};`).join("\n");
+    // Scratch and runtime folders inside a scanned root are never UI: the project scanner skips them too
+    // (procs/project/scan). Left in, Tailwind read every agent dump in .hyper/tmp — 105k files, 14 s and
+    // 2 GB per sheet instead of 0.9 s and 170 MB, with the same css out.
+    // A root reached through a symlink (/var → /private/var, a linked plugin) is excluded under both names:
+    // Tailwind matches the exclusion against the path it actually walked.
+    const dirs = [...new Set(modules.map((r: any) => String(r.dir)))];
+    const real = await Promise.all(dirs.map(dir => realpath(dir).catch(() => dir)));
+    const skip = (dir: string, i: number) => [...new Set([dir, real[i]!])].flatMap(d => ["tmp", "_runtime", ...(dir.endsWith("/.hyper") ? ["results", "memory"] : [])].map(s => `@source not ${JSON.stringify(`${d}/${s}`)};`));
+    const sources = dirs.flatMap((dir, i) => [`@source ${JSON.stringify(dir)};`, ...skip(dir, i)]).join("\n");
 
     // Tailwind resolves `@import "tailwindcss"` from the INPUT FILE's directory
     // upward — not from the process's cwd — so the generated input lives inside
@@ -61,7 +69,7 @@ async function compile(ctx: Context, opts: {
     // Tailwind and Typography provide utilities and prose styling. Application
     // components and light/dark tokens live in $style_app.css so the project has
     // no external component-theme runtime or generated component layer.
-    const wrapper = `@import "tailwindcss";\n@plugin "@tailwindcss/typography";\n${sources}\n@import ${JSON.stringify(opts.abs)};\n`;
+    const wrapper = `@import "tailwindcss" source(none);\n@plugin "@tailwindcss/typography";\n${sources}\n@import ${JSON.stringify(opts.abs)};\n`;
     if (!opts.force && record?.built === output && await Bun.file(output).exists()) return output;
     // hyper-code2: right after a restart nothing is built yet, and the first page asked for all eleven
     // sheets at once — eleven Tailwinds scanning the whole workspace in parallel, pages unstyled until

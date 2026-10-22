@@ -60,6 +60,29 @@ test("styles.build runs Tailwind on this bun, not on a node or bunx from PATH", 
     }
 }, 60_000);
 
+test("scratch folders inside a scanned root (tmp, _runtime, .hyper/results) are not read for classes", async () => {
+    const { dir, ctx, cleanup } = await setup();
+    try {
+        // As in a repo: src/ and .hyper/ are separate scanned roots.
+        const src = join(dir, "src"), hyper = join(dir, ".hyper");
+        ctx.fns.procs.modules.discover = async () => [{ dir: src }, { dir: hyper }];
+        await Bun.write(join(src, "page.html"), `<div class="mt-[101px]"></div>`);
+        await Bun.write(join(src, "tmp", "dump.html"), `<div class="mt-[202px]"></div>`);
+        await Bun.write(join(hyper, "tmp", "a1", "dump.html"), `<div class="mt-[212px]"></div>`);
+        await Bun.write(join(src, "_runtime", "x.html"), `<div class="mt-[303px]"></div>`);
+        await Bun.write(join(hyper, "results", "r.json"), `"mt-[404px]"`);
+        await Bun.write(join(hyper, "skill", "view.ts"), `const c = "mt-[505px]";`);
+        const abs = join(dir, "app.css");
+        await writeFile(abs, `.marker-rule { color: red; }`);
+        const css = await Bun.file(await build(ctx, null, { abs, key: "probe" })).text();
+        expect(css).toContain("101px");
+        expect(css).toContain("505px");
+        for (const px of ["202px", "212px", "303px", "404px"]) expect(css).not.toContain(px);
+    } finally {
+        await cleanup();
+    }
+}, 60_000);
+
 test("a failed rebuild serves the last good stylesheet; with none it throws", async () => {
     const { dir, ctx, warnings, cleanup } = await setup();
     try {
@@ -77,20 +100,27 @@ test("a failed rebuild serves the last good stylesheet; with none it throws", as
     }
 }, 60_000);
 
-test("after a restart a failing first build serves the sheet left by the previous run", async () => {
+test("after a restart the previous run's sheet is served at once and one rebuild follows; a failing rebuild keeps it", async () => {
     const { dir, ctx, warnings, cleanup } = await setup();
     try {
         const abs = join(dir, "app.css");
         await writeFile(abs, `.good-rule { color: red; }`);
         const out = await build(ctx, null, { abs, key: "probe" });
         // A new process: same app and files on disk, nothing built in this run.
+        const rebuilds: Promise<string>[] = [];
         const restarted: any = { ...ctx, state: { procs: { styles: [{ key: "probe" }] } } };
+        restarted.fns = { procs: { ...ctx.fns.procs, styles: { rebuild: async () => { rebuilds.push(build(restarted, null, { abs, key: "probe", force: true })); } } } };
         await writeFile(abs, `.bad { @apply no-such-utility-xyz; }`);
+        // Served without running Tailwind, and marked built so the next request does not build either.
         expect(await build(restarted, null, { abs, key: "probe" })).toBe(out);
-        expect(await Bun.file(out).text()).toContain("good-rule");
-        expect(warnings.join("\n")).toContain("left from an earlier run");
-        // Marked built: the next request does not respawn the failing build.
         expect(restarted.state.procs.styles[0].built).toBe(out);
+        expect(await build(restarted, null, { abs, key: "probe" })).toBe(out);
+        await Bun.sleep(0);
+        expect(rebuilds.length).toBe(1);
+        // The rebuild fails on the broken source: the last good sheet stays.
+        expect(await rebuilds[0]).toBe(out);
+        expect(await Bun.file(out).text()).toContain("good-rule");
+        expect(warnings.join("\n")).toContain("last good stylesheet");
     } finally {
         await cleanup();
     }
