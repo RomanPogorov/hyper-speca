@@ -21,6 +21,9 @@ mkdir -p "$SRC" "$LOG" "$PREFIX"
 JOBS=${JOBS:-$(sysctl -n hw.ncpu 2>/dev/null || /usr/sbin/sysctl -n hw.ncpu)}
 PG_CONFIG=$PREFIX/bin/pg_config
 export LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+# Called from the Makefile, the inner makes would run at MAKELEVEL 1, and PostgreSQL generates its headers
+# (errcodes.h, catalog/*_d.h) only at level 0 — a parallel build then fails on missing headers.
+unset MAKELEVEL MAKEFLAGS MFLAGS
 
 BREW=$(brew --prefix)
 dep() { brew --prefix "$1" 2>/dev/null; }
