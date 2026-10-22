@@ -5,14 +5,19 @@
 // A loader IS a function, like everything else here: it takes the entries of its
 // kind and does what it likes with them.
 import { bindSelf, dottedName, setPath, source } from "./boot/load";
-import { readFileSync, statSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Load loader fn declarations into the runtime.
  * @param opts.entries The loader entries to register.
  */
 export default async function (ctx: Context, _session: Session | null, opts: { entries: any[] }): Promise<void> {
-    const ts = await import("typescript");
+    // hyper-code2: the compiler is imported only when some file actually has to be parsed — with the
+    // on-disk cache below a boot of unchanged files parses nothing and never loads it (~60 MB).
+    loadDiskCache();
+    const ts = opts.entries.some((e: any) => e.source || !reflectCache.has(cacheKey(e))) ? await import("typescript") : null;
+    const parsedBefore = parsedCount;
     const loaded: any[] = [];
     for (const entry of opts.entries) {
         // Imported once by the bootstrap; on a hot reload there is no entry.fn
@@ -41,6 +46,7 @@ export default async function (ctx: Context, _session: Session | null, opts: { e
     // filesystem-specific (APFS alphabetical, ext4 hash) — debug may be
     // registered before emit exists.
     for (const entry of loaded) (ctx.fns as any).procs?.log?.debug?.({ event: "load.fn", msg: dottedName(entry), from: source(entry) });
+    if (parsedCount !== parsedBefore) saveDiskCache();
 }
 
 // Parsing every file with the TypeScript compiler is most of a boot's cost after the imports; a test file
@@ -48,15 +54,53 @@ export default async function (ctx: Context, _session: Session | null, opts: { e
 // Entries that carry their own source (bundles, hot reload with text) are always parsed.
 // On globalThis: boot imports this loader cache-busted, so a module-level Map would start empty every boot.
 const reflectCache: Map<string, any> = ((globalThis as any).__hyperReflectCache ??= new Map());
+let parsedCount = 0;
+function cacheKey(entry: any): string {
+    try { const st = statSync(entry.abs); return `${entry.abs}:${st.mtimeMs}:${st.size}`; } catch { return ""; }
+}
 function reflectCached(ts: any, entry: any): any {
     if (entry.source) return reflectSource(ts, entry);
-    let key = "";
-    try { key = `${entry.abs}:${statSync(entry.abs).mtimeMs}`; } catch { return reflectSource(ts, entry); }
+    const key = cacheKey(entry);
+    if (!key) return reflectSource(ts, entry);
     const hit = reflectCache.get(key);
     if (hit) return structuredClone(hit);
     const parsed = reflectSource(ts, entry);
     reflectCache.set(key, parsed);
+    parsedCount++;
     return structuredClone(parsed);
+}
+
+// hyper-code2: the same cache on disk, so a restart does not parse every function file again. Parsing all
+// ~2000 of them cost seconds of boot and ~300 MB the allocator never gave back. The version is this file's
+// own source: any change to the parser below throws the whole cache away. Keys carry mtime and size, so an
+// edited file misses; entries of deleted files are dropped when the file is written back.
+const DISK = join(import.meta.dir, "../../.runtime/reflect-cache.json");
+let VERSION = "";
+function version(): string {
+    if (!VERSION) { try { VERSION = String(Bun.hash(readFileSync(import.meta.path))); } catch { VERSION = "unknown"; } }
+    return VERSION;
+}
+function loadDiskCache(): void {
+    if ((globalThis as any).__hyperReflectDiskLoaded) return;
+    (globalThis as any).__hyperReflectDiskLoaded = true;
+    try {
+        const disk = JSON.parse(readFileSync(DISK, "utf8"));
+        if (disk?.version !== version()) return;
+        for (const [k, v] of Object.entries(disk.entries ?? {})) if (!reflectCache.has(k)) reflectCache.set(k, v);
+    } catch { /* no cache yet, or unreadable: parse */ }
+}
+function saveDiskCache(): void {
+    try {
+        const entries: Record<string, any> = {};
+        for (const [k, v] of reflectCache) {
+            const abs = k.slice(0, k.lastIndexOf(":", k.lastIndexOf(":") - 1));
+            if (cacheKey({ abs }) === k) entries[k] = v;   // only files as they are on disk now
+        }
+        mkdirSync(join(DISK, ".."), { recursive: true });
+        const tmp = `${DISK}.${process.pid}.tmp`;
+        writeFileSync(tmp, JSON.stringify({ version: version(), entries }));
+        renameSync(tmp, DISK);
+    } catch { /* a cache that cannot be written only costs the next boot its parse */ }
 }
 
 function reflectSource(ts: any, entry: any): any {
