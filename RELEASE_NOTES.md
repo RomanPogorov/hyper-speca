@@ -16,9 +16,16 @@ what to do (if anything). Internal refactors without visible effect do not need 
   `send`, `events`). Docs: `docs/hyperd.md`.
 - Setting `jobs.backend` (`tmux` default | `hyperd`): local background bash jobs run as hyperd units. SSH
   hosts still use tmux. Switch back by setting it to `tmux`.
-- On this instance: hyperd runs as the system LaunchDaemon `com.hyper.hyperd`, `jobs.backend = hyperd`, and
-  the test Postgres (`~/.hyper/pg-test`, port 54400) runs as unit `pg-test`. Verified across a hyper restart:
-  the service kept its pid and a background job started before the restart reported to the new process.
+- Safe by default: secrets passed with `run({ env })` stay in hyperd's memory and never touch disk; only one
+  daemon runs per home (exclusive pid file plus a socket check); after a reboot a reused pid is not taken for
+  a live process; if a holder dies, its orphaned process group is killed before a restart, so a service never
+  runs twice. The daemon started on demand by hyper gets only a minimal environment, not the server's keys.
+  Under launchd/systemd a second copy waits for the running daemon to exit instead of restart-looping.
+- Background job units: a task without a pty gets no stdin (EOF at once, like tmux jobs); the last output is
+  kept when a job ends; finished job units and their logs are removed after a day (`HYPERD_GC_MS`).
+- Not yet: rotation of the event journal; Linux/systemd is covered by unit tests but not run live yet.
+- To try it: `bun hyperd/cli.ts install`, follow the printed commands, `bun hyperd/cli.ts doctor`, then set
+  `jobs.backend = hyperd`. Switch back by setting it to `tmux`; nothing else to migrate.
 
 ### Background jobs are easier for agents to find and use
 - System prompt names every call in full (`ctx.fns.agent.wake/cron/watch`, `jobs.list/cancel`), explains that

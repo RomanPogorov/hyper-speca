@@ -4,7 +4,7 @@
 // State lives in files only (hyperd may be what starts the database).
 //
 //   bun hyperd/main.ts            HYPERD_HOME (default ~/.hyper/run/hyperd), HYPERD_UNITS (default ~/.hyper/units, ':'-separated)
-import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { checkUnit, loadUnitFile, UNIT_FILE, type Unit } from "./Unit.ts";
@@ -14,6 +14,7 @@ const UNIT_DIRS = (process.env.HYPERD_UNITS ?? join(homedir(), ".hyper/units")).
 const HOLDER = join(import.meta.dir, "holder.ts");
 const TICK_MS = Number(process.env.HYPERD_TICK_MS ?? 200);
 mkdirSync(join(HOME, "units"), { recursive: true, mode: 0o700 });
+chmodSync(HOME, 0o700);
 
 type State = "stopped" | "waiting" | "starting" | "running" | "ready" | "stopping" | "backoff" | "exited" | "failed";
 type Exit = { code: number | null; signal: string | null; at: number; reason: string };
@@ -35,6 +36,7 @@ type Sup = {
     carry: string;
     probing?: boolean;
     error?: string;
+    env?: Record<string, string>; // one-shot env from the API (secrets): memory only, never on disk
 };
 const units = new Map<string, Sup>();
 
@@ -68,10 +70,15 @@ function readEvents(after: number, limit: number) {
 const unitDir = (name: string) => join(HOME, "units", name);
 const runDir = (name: string, run: number) => join(unitDir(name), `run-${run}`);
 const readJson = (p: string) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
-const alive = (pid: number | null | undefined) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch (e: any) { return e?.code === "EPERM"; } };
+// EPERM means the pid belongs to someone else (reused after a reboot): not ours, so not alive
+const alive = (pid: number | null | undefined) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
+const commandOf = (pid: number) => { try { return Bun.spawnSync(["ps", "-o", "command=", "-p", String(pid)]).stdout.toString().trim(); } catch { return ""; } };
+// a pid read from disk may have been reused after a reboot: check it is really our process
+const isOurs = (pid: number | null | undefined, ...marks: string[]) => alive(pid) && marks.every((m) => commandOf(pid!).includes(m));
+const writeAtomic = (p: string, data: string, mode?: number) => { writeFileSync(p + ".tmp", data, mode ? { mode } : undefined); renameSync(p + ".tmp", p); };
 const pidOf = (name: string, run: number, file: string) => Number(readFileSync(join(runDir(name, run), file), "utf8")) || null;
 function persist(s: Sup) {
-    writeFileSync(join(unitDir(s.unit.name), "state.json"), JSON.stringify({ run: s.run, want: s.want, restarts: s.restarts, state: s.state, startedAt: s.startedAt, readyAt: s.readyAt, lastExit: s.lastExit, logOff: s.logOff, source: s.source, file: s.file }));
+    writeAtomic(join(unitDir(s.unit.name), "state.json"), JSON.stringify({ run: s.run, want: s.want, restarts: s.restarts, state: s.state, startedAt: s.startedAt, readyAt: s.readyAt, lastExit: s.lastExit, logOff: s.logOff, source: s.source, file: s.file }));
 }
 function setState(s: Sup, state: State, data: Record<string, unknown> = {}, event?: string) {
     s.state = state;
@@ -90,11 +97,10 @@ const expand = (p: string) => p.startsWith("~/") ? join(homedir(), p.slice(2)) :
 
 function register(unit: Unit, source: "file" | "transient", file?: string, env?: Record<string, string>) {
     mkdirSync(unitDir(unit.name), { recursive: true, mode: 0o700 });
-    writeFileSync(join(unitDir(unit.name), "spec.json"), JSON.stringify({ unit, source, file }, null, 2));
-    if (env) writeFileSync(join(unitDir(unit.name), "env.pending.json"), JSON.stringify(env), { mode: 0o600 });
+    writeAtomic(join(unitDir(unit.name), "spec.json"), JSON.stringify({ unit, source, file }, null, 2));
     const prev = units.get(unit.name);
-    if (prev) { prev.unit = unit; prev.source = source; prev.file = file; persist(prev); return prev; }
-    const s: Sup = { unit, source, file, state: "stopped", run: 0, want: false, restarts: 0, logOff: 0, carry: "" };
+    if (prev) { prev.unit = unit; prev.source = source; prev.file = file; if (env || source === "transient") prev.env = env; persist(prev); return prev; }
+    const s: Sup = { unit, source, file, state: "stopped", run: 0, want: false, restarts: 0, logOff: 0, carry: "", env };
     units.set(unit.name, s);
     persist(s);
     return s;
@@ -109,13 +115,14 @@ function launch(s: Sup) {
     writeFileSync(join(dir, "launch.json"), JSON.stringify({
         cmd: argv(u), cwd: u.cwd ? expand(u.cwd) : undefined,
         pty: pty ? { cols: (typeof pty === "object" && pty.cols) || 120, rows: (typeof pty === "object" && pty.rows) || 40 } : false,
+        // a task gets no stdin (EOF at once, like a backgrounded shell job); services and sessions keep it for input
+        stdin: !pty && kindOf(u) === "task" ? "ignore" : "pipe",
     }));
-    // env: unit env plus one-shot env handed over by the API (secrets); the holder deletes env.json after reading.
-    const pending = join(unitDir(u.name), "env.pending.json");
-    const env = { ...(u.env ?? {}), ...(readJson(pending) ?? {}) };
-    writeFileSync(join(dir, "env.json"), JSON.stringify(env), { mode: 0o600 });
+    // env: unit env plus the one-shot API env (secrets, memory only); the holder deletes env.json right after reading
+    writeAtomic(join(dir, "env.json"), JSON.stringify({ ...(u.env ?? {}), ...(s.env ?? {}) }), 0o600);
     const h = Bun.spawn(["bun", HOLDER, dir], { cwd: dir, detached: true, stdio: ["ignore", "ignore", "ignore"] } as any);
     h.unref();
+    writeFileSync(join(dir, "holder.pid"), String(h.pid)); // known at once, no window where the run has no holder pid
     s.startedAt = Date.now(); s.readyAt = undefined; s.logOff = 0; s.carry = ""; s.stopReason = undefined; s.stopDeadline = undefined; s.error = undefined;
     s.nextAt = Date.now() + (u.ready?.intervalMs ?? 500);
     setState(s, u.ready ? "starting" : "running", { holderPid: h.pid, runDir: dir }, "started");
@@ -195,17 +202,35 @@ async function probe(s: Sup, text: string): Promise<boolean> {
     if (r.http) { try { const res = await fetch(r.http, { signal: AbortSignal.timeout(2000) }); return res.ok; } catch { return false; } }
     if (r.tcp !== undefined) {
         const [host, port] = String(r.tcp).includes(":") ? String(r.tcp).split(":") : ["127.0.0.1", String(r.tcp)];
-        try { const sock = await Bun.connect({ hostname: host, port: Number(port), socket: { data() {} } }); sock.end(); return true; } catch { return false; }
+        try {
+            const sock = await Promise.race([Bun.connect({ hostname: host, port: Number(port), socket: { data() {} } }), Bun.sleep(2000).then(() => { throw new Error("timeout"); })]);
+            sock.end(); return true;
+        } catch { return false; }
     }
-    if (r.exec) { try { const p = Bun.spawn(r.exec, { stdio: ["ignore", "ignore", "ignore"], cwd: s.unit.cwd ? expand(s.unit.cwd) : undefined }); return (await p.exited) === 0; } catch { return false; } }
+    if (r.exec) {
+        try {
+            const p = Bun.spawn(r.exec, { stdio: ["ignore", "ignore", "ignore"], cwd: s.unit.cwd ? expand(s.unit.cwd) : undefined, env: { ...process.env, ...(s.unit.env ?? {}) } });
+            const t = setTimeout(() => p.kill("SIGKILL"), 5000);
+            try { return (await p.exited) === 0; } finally { clearTimeout(t); }
+        } catch { return false; }
+    }
     return true;
 }
+
+const GC_MS = Number(process.env.HYPERD_GC_MS ?? 24 * 3600_000);
 
 async function tick() {
     const now = Date.now();
     for (const s of units.values()) {
         const name = s.unit.name;
         try {
+            // finished transient units (background jobs) are removed with their logs a day after they ended
+            if (s.source === "transient" && !s.want && ["exited", "failed", "stopped"].includes(s.state) && s.lastExit && now - s.lastExit.at > GC_MS) {
+                emit(name, "removed", { reason: "gc" });
+                units.delete(name);
+                rmSync(unitDir(name), { recursive: true, force: true });
+                continue;
+            }
             if (s.state === "waiting" && s.want) {
                 if ((s.unit.after ?? []).every((d) => units.get(d)?.state === "ready")) launch(s);
                 continue;
@@ -235,19 +260,26 @@ async function tick() {
                 continue;
             }
             const holder = (() => { try { return pidOf(name, s.run, "holder.pid"); } catch { return null; } })();
-            if (holder && !alive(holder) && !existsSync(join(dir, "exit.json"))) {
+            if (!alive(holder) && !existsSync(join(dir, "exit.json"))) {
+                // the holder died (SIGKILL, OOM) but its child may still run in its own group: kill it before any
+                // restart, or a second copy of the service would start next to it
+                signalRun(s, "SIGKILL");
+                rmSync(join(dir, "env.json"), { force: true }); // the holder may have died before reading it
                 onExit(s, { code: null, signal: null, at: now, reason: "lost" });
                 continue;
             }
-            if (!holder && now - (s.startedAt ?? now) > 10_000) { onExit(s, { code: null, signal: null, at: now, reason: "lost" }); continue; }
 
-            if (s.state === "stopping" && now >= (s.stopDeadline ?? Infinity)) { signalRun(s, "SIGKILL"); s.stopDeadline = Infinity; }
+            // SIGKILL after the deadline, repeated until exit.json shows up (the child pid may appear late)
+            if (s.state === "stopping" && now >= (s.stopDeadline ?? Infinity)) { signalRun(s, "SIGKILL"); s.stopDeadline = now + 1000; }
             if (s.unit.ttlMs && (s.state === "running" || s.state === "ready" || s.state === "starting") && now - (s.startedAt ?? now) >= s.unit.ttlMs) stop(s, "ttl");
 
             if (s.state === "starting" && s.unit.ready && s.unit.ready.log === undefined && !s.probing && now >= (s.nextAt ?? 0)) {
                 s.probing = true;
                 s.nextAt = now + (s.unit.ready.intervalMs ?? 500);
-                probe(s, "").then((ok) => { if (ok && s.state === "starting") markReady(s); }).finally(() => { s.probing = false; });
+                const run = s.run;
+                const limit = Math.max(1000, s.unit.ready.intervalMs ?? 500) + 4000;
+                Promise.race([probe(s, ""), Bun.sleep(limit).then(() => false)])
+                    .then((ok) => { if (ok && s.state === "starting" && s.run === run) markReady(s); }).finally(() => { s.probing = false; });
             }
             if (s.state === "starting" && s.unit.ready && now - (s.startedAt ?? now) > (s.unit.ready.timeoutMs ?? 60_000) && !s.error) {
                 s.error = "ready timeout";
@@ -270,10 +302,21 @@ function recover() {
         const s: Sup = { unit, source: spec.source, file: spec.file, state: st?.state ?? "stopped", run: st?.run ?? 0, want: !!st?.want, restarts: st?.restarts ?? 0,
             startedAt: st?.startedAt, readyAt: st?.readyAt, lastExit: st?.lastExit, logOff: st?.logOff ?? 0, carry: "" };
         units.set(name, s);
+        // env.pending.json is from versions that kept one-shot env next to the spec; it may hold secrets
+        rmSync(join(unitDir(name), "env.pending.json"), { force: true });
+        // the stop deadline lives in memory only: give a unit caught in "stopping" a fresh one
+        if (s.state === "stopping") s.stopDeadline = Date.now() + (unit.stop?.timeoutMs ?? 10_000);
         // the next tick finds exit.json / a dead holder; a live holder is simply adopted
         if (["starting", "running", "ready", "stopping"].includes(s.state)) {
             const holder = (() => { try { return pidOf(name, s.run, "holder.pid"); } catch { return null; } })();
-            emit(name, "adopted", { holderPid: holder, alive: alive(holder) });
+            const ours = isOurs(holder, "holder.ts", runDir(name, s.run));
+            if (!ours && !existsSync(join(runDir(name, s.run), "exit.json"))) {
+                // after a reboot the pid may belong to an unrelated process: the run is gone, the next tick restarts per policy
+                rmSync(join(runDir(name, s.run), "holder.pid"), { force: true });
+                rmSync(join(runDir(name, s.run), "child.pid"), { force: true });
+                rmSync(join(runDir(name, s.run), "env.json"), { force: true });
+            }
+            emit(name, "adopted", { holderPid: holder, alive: ours });
         }
         if (s.state === "backoff") s.nextAt = Date.now();
     }
@@ -397,19 +440,42 @@ async function handle(req: Request): Promise<Response> {
 // ---- boot -------------------------------------------------------------------------------------------
 const SOCK = join(HOME, "hyperd.sock");
 const pidFile = join(HOME, "hyperd.pid");
-const other = Number(existsSync(pidFile) ? readFileSync(pidFile, "utf8") : 0);
-if (other && other !== process.pid && alive(other)) { console.error(`hyperd already running (pid ${other})`); process.exit(1); }
-writeFileSync(pidFile, String(process.pid));
+// single instance: the pid file is created exclusively (O_EXCL), so two daemons started at once cannot both win;
+// a leftover file is taken over only when its pid is not a live hyperd (pids are reused after a reboot)
+function takePidFile(): boolean {
+    for (let i = 0; i < 3; i++) {
+        try { const fd = openSync(pidFile, "wx", 0o600); writeSync(fd, String(process.pid)); closeSync(fd); return true; }
+        catch (e: any) { if (e?.code !== "EEXIST") throw e; }
+        let other = Number(readFileSync(pidFile, "utf8")) || 0;
+        // an empty file is another daemon between its exclusive create and its write: look again before removing it
+        if (!other) { Bun.sleepSync(100); try { other = Number(readFileSync(pidFile, "utf8")) || 0; } catch { continue; } }
+        if (other && other !== process.pid && isOurs(other, "hyperd/main.ts")) return false;
+        rmSync(pidFile, { force: true });
+    }
+    return false;
+}
+async function socketAnswers() {
+    if (!existsSync(SOCK)) return false;
+    try { return (await fetch("http://hyperd/health", { unix: SOCK, signal: AbortSignal.timeout(1000) } as any)).ok; } catch { return false; }
+}
+// Under launchd/systemd (HYPERD_SUPERVISED=1, set by the service file) exiting here would make KeepAlive/Restart=always
+// relaunch us every few seconds (systemd then gives up for good): wait instead until the other daemon is gone.
+for (let said = false; await socketAnswers() || !takePidFile(); said = true) {
+    if (process.env.HYPERD_SUPERVISED !== "1") { console.error(`hyperd already running (${pidFile})`); process.exit(0); }
+    if (!said) console.error(`hyperd already running (${pidFile}); waiting for it to exit`);
+    await Bun.sleep(5000);
+}
 rmSync(SOCK, { force: true });
 recover();
 emit("hyperd", "daemon_started", { pid: process.pid });
 const server = Bun.serve({ unix: SOCK, fetch: handle, idleTimeout: 0 } as any);
 chmodSync(SOCK, 0o600);
+let ticking = false;
+// tick starts before unit files are read, so a slow unit file never stalls supervision of the others
+setInterval(async () => { if (ticking) return; ticking = true; try { await tick(); } finally { ticking = false; } }, TICK_MS);
 const scan = await scanFiles(true);
 if (scan.errors.length) emit("hyperd", "unit_errors", { errors: scan.errors });
-let ticking = false;
-setInterval(async () => { if (ticking) return; ticking = true; try { await tick(); } finally { ticking = false; } }, TICK_MS);
 console.log(`hyperd ${process.pid} on ${SOCK}, ${units.size} units`);
-const shutdown = () => { emit("hyperd", "daemon_stopping", { pid: process.pid }); server.stop(true); rmSync(SOCK, { force: true }); rmSync(pidFile, { force: true }); process.exit(0); };
+const shutdown = () => { emit("hyperd", "daemon_stopping", { pid: process.pid }); server.stop(true); rmSync(SOCK, { force: true }); if (readJson(pidFile) === process.pid) rmSync(pidFile, { force: true }); process.exit(0); };
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);

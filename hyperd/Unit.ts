@@ -55,7 +55,7 @@ export type Unit = {
     labels?: Record<string, string>;
 };
 
-const NAME = /^[A-Za-z0-9._-]{1,64}$/;
+const NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/; // no leading dot: "." and ".." would escape units/
 const KEYS = new Set(["name", "kind", "cmd", "cwd", "env", "after", "ready", "restart", "stop", "ttlMs", "pty", "logMatch", "autostart", "owner", "labels"]);
 
 /** Strict check: unknown keys and wrong types are errors with a path, never silently coerced. */
@@ -126,7 +126,9 @@ export async function loadUnitFile(path: string): Promise<Unit> {
     else if (/\.json$/.test(path)) data = JSON.parse(await Bun.file(path).text());
     else if (/\.ts$/.test(path)) {
         const p = Bun.spawn(["bun", "-e", `const m = await import(${JSON.stringify(path)}); process.stdout.write(JSON.stringify(m.default ?? null))`], { stdout: "pipe", stderr: "pipe" });
+        const t = setTimeout(() => p.kill("SIGKILL"), 10_000); // a hanging unit file must not hang the daemon
         const [out, err, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+        clearTimeout(t);
         if (code !== 0) throw new Error(`${base}: ${err.trim().split("\n").slice(-3).join(" ")}`);
         data = JSON.parse(out);
     } else throw new Error(`${base}: unsupported unit file type`);

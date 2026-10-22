@@ -41,7 +41,9 @@ bun hyperd/cli.ts doctor      # daemon answers, parent is launchd/systemd, unit 
 
 In hyper set `jobs.backend` to `hyperd` (Settings, or `settings.set({ module: "jobs", scopeType: "global",
 key: "backend", value: "hyperd" })`). Without an installed service hyper starts hyperd itself on first use
-(`hyperd.ensure`) — fine for trying it out, not for production.
+(`hyperd.ensure`) — fine for trying it out, not for production. If such a daemon is still running when you
+install the service, the service-started copy waits until it exits; stop it with
+`kill $(cat ~/.hyper/run/hyperd/hyperd.pid)` (your services keep running and are adopted).
 
 Upgrade: `git pull`, then restart the daemon (`sudo launchctl kickstart -k system/com.hyper.hyperd` or
 `systemctl --user restart hyperd`). Running services keep running: the new daemon adopts them.
@@ -67,7 +69,6 @@ ttlMs: 3600000                # optional: stop after this long
 Then `hyperd.reload({})` (or `bun hyperd/cli.ts reload`). Unknown keys and wrong types are rejected with the
 field name. A file named `web.yaml` is unit `web` unless it sets `name`.
 
-Real example on this machine: `~/.hyper/units/pg-test.yaml` (test Postgres, port 54400).
 
 ## From an agent (ctx.fns.hyperd.*)
 
@@ -87,6 +88,16 @@ jobs functions for them, not hyperd directly.
 
 States: `waiting` (for after) → `starting` (ready check) → `ready` → `stopping` → `exited` | `failed`;
 `backoff` between restarts.
+
+Good to know:
+
+- `run({ env })` keeps env in hyperd's memory only, never on disk. A service restarted by hyperd itself gets it
+  again; after a restart of hyperd the next run gets only the unit's own `env`.
+- A `task` without a pty gets no stdin (EOF at once). Services and sessions keep stdin for `send`.
+- When a process exits, whatever it left in its process group is killed.
+- Finished transient units (background jobs) are removed with their logs a day after they ended (`HYPERD_GC_MS`).
+- A ready check that never passes leaves the unit in `starting` and emits `unhealthy`; it is not restarted.
+- Not yet: rotation of `events.ndjson`; Linux/systemd has unit tests but no live run so far.
 
 ## CLI
 

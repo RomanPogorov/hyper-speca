@@ -11,7 +11,7 @@ import { appendFileSync, existsSync, rmSync, unlinkSync, writeFileSync, renameSy
 
 const dir = process.argv[2];
 if (!dir) { console.error("usage: holder.ts <runDir>"); process.exit(2); }
-const launch = JSON.parse(await Bun.file(`${dir}/launch.json`).text()) as { cmd: string[]; cwd?: string; pty: false | { cols: number; rows: number } };
+const launch = JSON.parse(await Bun.file(`${dir}/launch.json`).text()) as { cmd: string[]; cwd?: string; pty: false | { cols: number; rows: number }; stdin?: "pipe" | "ignore" };
 let env: Record<string, string> = {};
 if (existsSync(`${dir}/env.json`)) { env = JSON.parse(await Bun.file(`${dir}/env.json`).text()); unlinkSync(`${dir}/env.json`); }
 
@@ -27,6 +27,7 @@ const fullEnv = { ...process.env, ...env, ...(launch.pty ? { TERM: env.TERM ?? "
 delete fullEnv.HYPERD_HOLDER_PARENT;
 
 let proc: any;
+let pumps: Promise<void>[] = [];
 let writeInput: (d: Uint8Array | string) => void;
 try {
     if (launch.pty) {
@@ -34,10 +35,11 @@ try {
         writeInput = (d) => proc.terminal.write(d);
     } else {
         // Own process group, so hyperd can signal the whole tree with kill(-pid).
-        proc = Bun.spawn(launch.cmd, { cwd: launch.cwd, env: fullEnv, stdin: "pipe", stdout: "pipe", stderr: "pipe", detached: true } as any);
+        const stdin = launch.stdin ?? "pipe";
+        proc = Bun.spawn(launch.cmd, { cwd: launch.cwd, env: fullEnv, stdin, stdout: "pipe", stderr: "pipe", detached: true } as any);
         const pump = async (s: ReadableStream<Uint8Array>) => { for await (const chunk of s) out(chunk); };
-        void pump(proc.stdout); void pump(proc.stderr);
-        writeInput = (d) => { proc.stdin.write(d); proc.stdin.flush(); };
+        pumps = [pump(proc.stdout), pump(proc.stderr)];
+        writeInput = stdin === "pipe" ? (d) => { proc.stdin.write(d); proc.stdin.flush(); } : () => { throw new Error("no stdin"); };
     }
 } catch (error: any) {
     out(`hyperd: could not start ${JSON.stringify(launch.cmd)}: ${error?.message ?? error}\n`);
@@ -59,8 +61,12 @@ const server = Bun.listen({
 });
 
 const code = await proc.exited;
-await Bun.sleep(50); // let the last pipe chunks land
 const signal = proc.signalCode ?? null;
+// the leader is gone; whatever it left in its group (grandchildren) goes too, so a restart never runs next to them
+try { process.kill(-proc.pid, "SIGKILL"); } catch {}
+// let the last output land: it is often the whole result of a task
+await Promise.race([Promise.allSettled(pumps), Bun.sleep(2000)]);
+await Bun.sleep(launch.pty ? 50 : 0);
 writeFileSync(`${dir}/exit.tmp`, JSON.stringify({ code: signal ? null : code, signal, at: Date.now() }));
 renameSync(`${dir}/exit.tmp`, `${dir}/exit.json`);
 for (const c of clients) { try { c.end(); } catch {} }

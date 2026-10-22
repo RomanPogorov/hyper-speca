@@ -30,7 +30,7 @@ export function serviceFile(target: ServiceTarget, o: { bun?: string; repo?: str
   <key>Label</key><string>${label}</string>
 ${system ? `  <key>UserName</key><string>${xml(user)}</string>\n` : ""}  <key>ProgramArguments</key><array><string>${xml(bun)}</string><string>${xml(main)}</string></array>
   <key>WorkingDirectory</key><string>${xml(repo)}</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(PATH)}</string><key>HOME</key><string>${xml(home)}</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(PATH)}</string><key>HOME</key><string>${xml(home)}</string><key>HYPERD_SUPERVISED</key><string>1</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>AbandonProcessGroup</key><true/>
@@ -62,8 +62,9 @@ After=network.target
 [Service]
 Type=simple
 ${system ? `User=${user}\n` : ""}WorkingDirectory=${repo}
-Environment=HOME=${home}
-Environment=PATH=${PATH}
+Environment=${q(`HOME=${home}`)}
+Environment=${q(`PATH=${PATH}`)}
+Environment=HYPERD_SUPERVISED=1
 ExecStart=${q(bun)} ${q(main)}
 Restart=always
 RestartSec=2

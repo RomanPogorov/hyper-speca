@@ -206,6 +206,8 @@ describe("install", () => {
         expect(f.content).not.toContain("User=");
         expect(f.install.join("\n")).toContain("enable-linger ann");
         expect(serviceFile("systemd-system", o).content).toContain("User=ann");
+        expect(f.content).toContain("Environment=HYPERD_SUPERVISED=1");
+        expect(serviceFile("launchd-user", o).content).toContain("<key>HYPERD_SUPERVISED</key><string>1</string>");
     });
     test("doctor reports a daemon that is not OS-supervised and still passes the PTY check", async () => {
         const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "doctor"], { env: { ...process.env, HYPERD_HOME: home, HYPERD_UNITS: unitsDir } });

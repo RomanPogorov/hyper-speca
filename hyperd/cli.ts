@@ -86,7 +86,10 @@ async function main() {
             catch (e: any) { ok("daemon answers", false, String(e?.message ?? e) + " — start it: bun hyperd/cli.ts install"); }
             if (st) {
                 const ppid = Number(Bun.spawnSync(["ps", "-o", "ppid=", "-p", String(st.pid)]).stdout.toString().trim());
-                ok("supervised by the OS", ppid === 1, ppid === 1 ? "parent is init/launchd" : `parent pid ${ppid}: dies with it; install the service`);
+                // launchd and system systemd are pid 1; `systemd --user` is a per-user manager, so check the parent's name too
+                const parent = ppid > 1 ? Bun.spawnSync(["ps", "-o", "comm=", "-p", String(ppid)]).stdout.toString().trim() : "";
+                const supervised = ppid === 1 || /(^|\/)systemd$/.test(parent);
+                ok("supervised by the OS", supervised, supervised ? `parent is ${ppid === 1 ? "init/launchd" : parent}` : `parent pid ${ppid}: dies with it; install the service`);
                 const bad = st.units.filter((u: any) => u.error || u.state === "failed");
                 ok("units healthy", bad.length === 0, bad.length ? bad.map((u: any) => `${u.name}: ${u.error ?? u.state}`).join("; ") : `${st.units.length} units`);
                 const r = await call("/reload", { body: { autostart: false } });
