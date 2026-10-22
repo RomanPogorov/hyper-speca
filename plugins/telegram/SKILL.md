@@ -14,6 +14,7 @@ The `bot*` functions use a separate bot identity; existing personal MTProto APIs
 - `telegram.botGetMe({})` — check configured bot identity.
 - `telegram.botGetUpdates({ offset, timeout, limit? })` — one bounded poll (timeout 0–30 seconds, limit 1–100). Returns `{ updates, nextOffset }`. Requires an explicit nonnegative offset; **passing a higher offset acknowledges earlier updates at Telegram**. No automatic acknowledgement, offset storage or background worker: process the batch, persist the returned cursor, then explicitly use it on the next poll. The cursor advances over filtered updates too, so hidden events do not cause endless replay. Polling itself is not side-effect-free when you advance the offset.
 - `telegram.botSendMessage({ chatId, text, confirm: true })` — explicitly approved plain text only, 1–4096 UTF-16 code units. No automatic retries (an uncertain network result may already have sent the message).
+- `telegram.botSendPhoto({ chatId, path, caption?, confirm: true })` — one explicitly approved JPEG, PNG or WebP file (absolute path, up to 10 MB) with an optional plain caption; same allowlist and no retries.
 - `telegram.botRequest` is the shared restricted transport; direct calls enforce the same guards.
 
 ### Configuration and portability

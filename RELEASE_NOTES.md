@@ -27,6 +27,11 @@ what to do (if anything). Internal refactors without visible effect do not need 
 - To try it: `bun hyperd/cli.ts install`, follow the printed commands, `bun hyperd/cli.ts doctor`, then set
   `jobs.backend = hyperd`. Switch back by setting it to `tmux`; nothing else to migrate.
 
+### Telegram bot can send pictures
+- `telegram.botSendPhoto({ chatId, path, caption?, confirm: true })` sends one JPEG, PNG or WebP (up to 10 MB)
+  with an optional caption. Same rules as `botSendMessage`: only chats listed in `telegram.botAllowedChatIds`,
+  only with `confirm: true`, no retries.
+
 ### Background jobs are easier for agents to find and use
 - System prompt names every call in full (`ctx.fns.agent.wake/cron/watch`, `jobs.list/cancel`), explains that
   commands and triggers are rows of one jobs table, lists watch predicate options, and says that cancel is

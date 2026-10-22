@@ -3,6 +3,7 @@ import botRequest from "./botRequest";
 import botGetMe from "./botGetMe";
 import botGetUpdates from "./botGetUpdates";
 import botSendMessage from "./botSendMessage";
+import botSendPhoto from "./botSendPhoto";
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -86,5 +87,24 @@ describe("Telegram isolated Bot API", () => {
         f = fixture();
         await expect(botSendMessage(f.ctx, null, { chatId: "-123", text: "x".repeat(4097), confirm: true })).rejects.toThrow("4096");
         expect(f.calls).toHaveLength(0);
+    });
+    test("photo send is guarded and uploads multipart with caption", async () => {
+        const png = "/tmp/hyper-bot-test-" + process.pid + ".png";
+        await Bun.write(png, new Uint8Array([137, 80, 78, 71, 1, 2, 3]));
+        for (const [allowed, chatId, confirm, path] of [[[], "-123", true, png], [["-123"], "-456", true, png], [["-123"], "-123", false, png], [["-123"], "-123", true, "rel.png"], [["-123"], "-123", true, "/tmp/x.gif"], [["-123"], "-123", true, "/tmp/missing-hyper.png"]] as const) {
+            const f = fixture(allowed);
+            await expect(botSendPhoto(f.ctx, null, { chatId, path, confirm })).rejects.toThrow();
+            expect(f.calls).toHaveLength(0);
+            expect(f.secretReads()).toBe(0);
+        }
+        const f = fixture(); f.reply({ message_id: 9 });
+        expect(await botSendPhoto(f.ctx, null, { chatId: "-123", path: png, caption: "hi", confirm: true })).toEqual({ message_id: 9 });
+        expect(f.calls).toHaveLength(1);
+        expect(f.calls[0].url.endsWith("/sendPhoto")).toBe(true);
+        const body = f.calls[0].init?.body as FormData;
+        expect(body.get("chat_id")).toBe("-123");
+        expect(body.get("caption")).toBe("hi");
+        expect((body.get("photo") as File).size).toBe(7);
+        await expect(botSendPhoto(f.ctx, null, { chatId: "-123", path: png, caption: "x".repeat(1025), confirm: true })).rejects.toThrow("1024");
     });
 });
