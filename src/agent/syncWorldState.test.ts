@@ -18,6 +18,8 @@ const tab = (over: Record<string, any> = {}) => ({
 async function withTab(ctx: any, binding: any) {
     ctx.state.registry.sidebar.bindingForAgent = async () => binding;
     ctx.state.registry.plugins.siteHint = async () => "";
+    // only the browser section is under test here, not the memory block of agent.promptAugment
+    delete ctx.state.procs.hooks.handlers["agent.promptAugment"];
 }
 
 test("the system prompt does not move when the bound tab navigates", async () => {
