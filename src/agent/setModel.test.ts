@@ -43,8 +43,8 @@ describe("agent.setModel", () => {
         await ctx.fns.agent.setModel({ id: a.id, model: "mock:other" });
 
         expect((await ctx.fns.session.load({ id: a.id })).scratchpad.parked).toBeUndefined();
-        const row = (await ctx.fns.procs.db.select({ sql: "SELECT wake_at, next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
-        expect(row.wake_at).toBeNull();
+        const row = (await ctx.fns.procs.db.select({ sql: "SELECT next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
+        expect(await ctx.fns.agent.triggers({ id: a.id })).toEqual([]);
         expect(row.next_run_at).not.toBeNull();
     });
 

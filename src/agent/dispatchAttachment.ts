@@ -13,9 +13,9 @@ export default async function (
     },
 ): Promise<{ outcome: string }> {
     const row = (await ctx.fns.procs.db.select({
-        sql: `SELECT d.id, a.agent_id, a.prompt, a.source, e.event_type, e.payload, e.occurred_at
-                FROM attachment_deliveries d JOIN agent_attachments a ON a.id = d.attachment_id JOIN attachment_events e ON e.id = d.event_id
-               WHERE d.id = ? AND d.status IN ('pending', 'failed') AND a.status = 'active'`,
+        sql: `SELECT d.id, a.agent_id, a.prompt, a.spec->>'source' AS source, e.event_type, e.payload, e.occurred_at
+                FROM attachment_deliveries d JOIN jobs a ON a.id = d.attachment_id JOIN attachment_events e ON e.id = d.event_id
+               WHERE d.id = ? AND d.status IN ('pending', 'failed') AND a.status = 'running'`,
         params: [opts.deliveryId],
     }) as any[])[0];
     if (!row) return { outcome: "missing" };
@@ -34,7 +34,7 @@ export default async function (
             // The claim IS the final state change: pending/failed → delivered commits with the message.
             before: async () => (await ctx.fns.procs.db.run({
                 sql: `UPDATE attachment_deliveries d SET status = 'delivered', attempts = attempts + 1, claim_token = NULL, claimed_at = NULL, last_error = NULL, updated_at = ?, delivered_at = ?
-                        FROM agent_attachments a WHERE d.id = ? AND d.status IN ('pending', 'failed') AND a.id = d.attachment_id AND a.status = 'active'`,
+                        FROM jobs a WHERE d.id = ? AND d.status IN ('pending', 'failed') AND a.id = d.attachment_id AND a.status = 'running'`,
                 params: [Date.now(), Date.now(), row.id],
             })).changes > 0,
         });

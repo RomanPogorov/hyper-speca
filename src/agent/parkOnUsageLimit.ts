@@ -8,7 +8,9 @@
 // Parked is deliberately NOT an error state: nothing is broken, and there is
 // nothing for the user to fix. The agent keeps its unread messages (the run
 // cursor never advanced), gets a wake-up at the reset moment, and continues on
-// its own. agent.deliverWakes then clears the mark.
+// its own: the wake-up is a jobs row (runner at, spec.park); jobs.tickSchedule
+// delivers it and clears the mark. The person's own wakes are separate jobs and
+// are held back while the agent is parked, so nothing is overwritten.
 /** Parks every agent sharing an exhausted subscription until its quota resets. */
 /**
  * Park all agents that share an exhausted subscription credential.
@@ -46,7 +48,7 @@ export default async function (
     const resetsAt = info.resetsAt && info.resetsAt > now + 30_000 ? info.resetsAt : now + fallbackMs;
 
     const rows = (await ctx.fns.procs.db.select({
-        sql: "SELECT id, model, wake_at, wake_reason FROM agents WHERE archived_at IS NULL AND model IS NOT NULL",
+        sql: "SELECT id, model FROM agents WHERE archived_at IS NULL AND model IS NOT NULL",
         params: [],
     })) as any[];
 
@@ -65,10 +67,11 @@ export default async function (
         // skew and an imprecise resets_at.
         const at = resetsAt + 60_000 + (hash(id) % 240_000);
         try {
+            const wake = await ctx.fns.jobs.schedule({ agentId: id, runner: "at", prompt: reason, nextAt: at, spec: { park: true } });
             const updated = await ctx.fns.session.mutateScratchpad({
                 id,
                 mutate: (scratchpad: Record<string, any>) => {
-                    const already = scratchpad.parked ?? null;
+                    const replaced = scratchpad.parked?.wakeJobId ?? null;
                     scratchpad.parked = {
                         reason: "usage_limit",
                         provider: info.provider,
@@ -77,29 +80,23 @@ export default async function (
                         planType: info.planType ?? null,
                         resetsAt,
                         wakeAt: at,
+                        wakeJobId: wake.id,
                         parkedAt: now,
                         message: info.message,
-                        // Only one time alarm exists per agent; remember what we
-                        // overwrote so unpark can put a user's own wake back.
-                        // A repeat 429 after a premature wake must preserve the
-                        // ORIGINAL user alarm, not remember our own parking wake
-                        // as if it belonged to the user.
-                        previousWake: already?.previousWake ?? (row.wake_at ? { at: Number(row.wake_at), reason: String(row.wake_reason ?? "") } : null),
                     };
+                    return replaced;
                 },
             });
+            // A repeat 429 replaces the earlier parking wake-up instead of adding a second one.
+            if (updated.result) await ctx.fns.agent.cancelTrigger({ id, triggerId: String(updated.result) });
             // Parking replaces the pending run and clears the error: this is a
             // wait, not a failure, and "send a message to retry" is bad advice.
             await ctx.fns.procs.db.run({
-                sql: "UPDATE agents SET wake_at = ?, wake_reason = ?, next_run_at = NULL, last_error = NULL, updated_at = ? WHERE id = ? AND archived_at IS NULL",
-                params: [at, reason, now, id],
+                sql: "UPDATE agents SET next_run_at = NULL, last_error = NULL, updated_at = ? WHERE id = ? AND archived_at IS NULL",
+                params: [now, id],
             });
             const live = (ctx.state as any).agent?.[id];
-            if (live) {
-                live.scratchpad = updated.scratchpad;
-                live.wakeAt = at;
-                live.wakeReason = reason;
-            }
+            if (live) live.scratchpad = updated.scratchpad;
             await ctx.fns.session.appendEvent({
                 id,
                 event: {

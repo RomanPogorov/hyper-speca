@@ -5,7 +5,8 @@
  * at fires once; cron fires and moves to its next occurrence; watch evaluates its predicate (once or edge mode,
  * optional timeout with onTimeoutPrompt). The prompt message, the job's new state and its job_runs audit row commit
  * in one transaction through agent.deliver, keyed by job id + scheduled time, so a retry never prompts twice and a
- * cancel that commits first wins. Predicate errors back off from 1 to 15 minutes.
+ * cancel that commits first wins. Predicate errors back off from 1 to 15 minutes. While the agent is parked on a
+ * usage limit its jobs wait for the parking wake-up (spec.park), which lifts the parking when it fires.
  * @param opts.row The leased jobs row.
  * @param opts.token Lease token held by this poll pass.
  * @param opts.now Evaluation timestamp in ms.
@@ -36,6 +37,18 @@ export default async function (
     if (row.cancel_requested_at != null) {
         await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET status = 'cancelled', outcome_reason = 'cancelled', next_at = NULL, lease_token = NULL, finished_at = ?, updated_at = ? WHERE id = ? AND lease_token = ?", params: [now, now, id, token] });
         return { outcome: "cancelled" };
+    }
+
+    // A parked agent (usage limit) has no quota: its own wake-ups, schedules and watches
+    // wait for the parking wake-up instead of waking it into another failure.
+    if (!spec.park) {
+        const pad = (await ctx.fns.procs.db.select({ sql: "SELECT scratchpad FROM agents WHERE id = ?", params: [String(row.agent_id)] }) as any[])[0];
+        let parked: any = null;
+        try { parked = JSON.parse(String(pad?.scratchpad ?? "{}"))?.parked ?? null; } catch { parked = null; }
+        if (parked && Number(parked.wakeAt) > now) {
+            await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET next_at = ?, lease_token = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ? AND lease_token = ?", params: [Number(parked.wakeAt) + 5000, now, id, token] });
+            return { outcome: "waiting" };
+        }
     }
 
     type Outcome = "fired" | "waiting" | "rearmed" | "timed_out" | "error";
@@ -121,6 +134,11 @@ export default async function (
         before: finalize,
         after: audit,
     });
+    // The parking wake-up means the quota is back: drop the mark (the delivery already scheduled the run).
+    if (spec.park && (delivered.delivered || delivered.duplicate)) {
+        try { await ctx.fns.agent.unpark({ id: String(row.agent_id), reason: "wake", resume: false, now }); }
+        catch (error: any) { console.error(`unpark on wake failed for ${row.agent_id}:`, error?.message ?? error); }
+    }
     if (delivered.duplicate) {
         // Delivered by an earlier pass that crashed before finalizing: finish the bookkeeping only.
         await ctx.fns.procs.db.transaction({ fn: async () => { if (await finalize()) await audit(); } });

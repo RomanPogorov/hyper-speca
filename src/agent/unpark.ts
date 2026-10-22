@@ -7,7 +7,7 @@
 /**
  * Remove the usage-limit parking mark from an agent.
  *
- * Restores the wake-up the parking overwrote, and — unless told otherwise —
+ * Cancels the parking wake-up job if it has not fired yet, and — unless told otherwise —
  * reschedules the agent when it still has unread user messages, so the work
  * that was interrupted by the exhausted quota continues.
  *
@@ -46,19 +46,8 @@ export default async function (
     const parked = updated.result as any;
     if (!parked) return { id, wasParked: false, resumed: false };
 
-    // Only touch the alarm if it is still OURS — a user who set their own wake
-    // while parked owns it now. A NULL alarm means the parking wake has just
-    // been delivered, and the user's own reminder (if any) should come back.
-    const previous = parked.previousWake ?? null;
-    const restoreAt = previous?.at && previous.at > now ? Number(previous.at) : null;
-    await ctx.fns.procs.db.run({
-        sql: `UPDATE agents
-                 SET wake_at = CASE WHEN wake_at = ? OR wake_at IS NULL THEN ? ELSE wake_at END,
-                     wake_reason = CASE WHEN wake_at = ? OR wake_at IS NULL THEN ? ELSE wake_reason END,
-                     updated_at = ?
-               WHERE id = ?`,
-        params: [parked.wakeAt ?? null, restoreAt, parked.wakeAt ?? null, restoreAt ? String(previous.reason ?? "") : null, now, id],
-    });
+    // The parking wake-up is its own job: cancel it unless it is what woke us.
+    if (parked.wakeJobId) await ctx.fns.agent.cancelTrigger({ id, triggerId: String(parked.wakeJobId) });
 
     // The run cursor never advanced while parked, so "unread" here means the
     // messages that the exhausted quota prevented from being answered.
@@ -82,11 +71,7 @@ export default async function (
     }
 
     const live = (ctx.state as any).agent?.[id];
-    if (live) {
-        live.scratchpad = updated.scratchpad;
-        live.wakeAt = restoreAt;
-        live.wakeReason = restoreAt ? String(previous.reason ?? "") : null;
-    }
+    if (live) live.scratchpad = updated.scratchpad;
 
     await ctx.fns.session.appendEvent({
         id,

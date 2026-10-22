@@ -30,8 +30,6 @@ id: string }): Promise<types.agent.Agent | null> {
         goal: row.goal == null ? null : (typeof row.goal === 'string' ? JSON.parse(row.goal) : row.goal),
         functionRagGateEnabled: row.function_rag_gate_enabled === true || row.function_rag_gate_enabled === 1 || row.function_rag_gate_enabled === 't',
         subscribers: new Set(),
-        wakeAt: row.wake_at == null ? null : Number(row.wake_at),
-        wakeReason: row.wake_reason == null ? null : String(row.wake_reason),
         waiters: [],
         isStreaming: false,
         abortController: null,

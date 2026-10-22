@@ -13,7 +13,7 @@ initialUsage?: any;
     let usage = initialUsage;
     const now = Date.now();
     const row = ((await ctx.fns.procs.db.select({
-        sql: 'SELECT run_state, run_started_at, next_run_at, last_processed_msg_idx, last_error, wake_at, scratchpad FROM agents WHERE id = ?',
+        sql: 'SELECT run_state, run_started_at, next_run_at, last_processed_msg_idx, last_error, scratchpad FROM agents WHERE id = ?',
         params: [agentId],
     })) as any[])[0];
     let parked: any = null;

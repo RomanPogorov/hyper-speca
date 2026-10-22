@@ -72,8 +72,6 @@ export default async function (
         currentJobId: null,
         goal: null,
         drainPromise: null,
-        wakeAt: null,
-        wakeReason: null,
     };
     (ctx.state as any).agent ??= {};
     (ctx.state as any).agent[id] = agent;

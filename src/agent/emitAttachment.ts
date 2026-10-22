@@ -36,7 +36,7 @@ export default async function (
         const inserted=await ctx.fns.procs.db.select({sql:"INSERT INTO attachment_events(source,event_id,event_type,payload,occurred_at,created_at) VALUES(?,?,?,?::jsonb,?,?) ON CONFLICT(source,event_id) DO NOTHING RETURNING id",params:[source,eventId,eventType,json,Math.floor(opts.occurredAt??now),now]}) as any[];
         if(!inserted.length)return null;
         const eventRowId=Number(inserted[0].id);
-        const subscriptions=await ctx.fns.procs.db.select({sql:"SELECT id,events,filter FROM agent_attachments WHERE source=? AND status='active'",params:[source]}) as any[];
+        const subscriptions=await ctx.fns.procs.db.select({sql:"SELECT id,spec->'events' AS events,spec->'filter' AS filter FROM jobs WHERE runner='attach' AND status='running' AND spec->>'source'=?",params:[source]}) as any[];
         const ids:number[]=[];
         for(const sub of subscriptions){
             const events=Array.isArray(sub.events)?sub.events:JSON.parse(sub.events??"[]"),filter=typeof sub.filter==="string"?JSON.parse(sub.filter):sub.filter??{};

@@ -16,23 +16,6 @@ const userMessages = async (ctx: any, id: string) =>
     (await ctx.fns.session.getMessages({ id })).filter((m: any) => m.role === "user");
 
 describe("delivery is atomic", () => {
-    test("deliverWakes: a crash while writing the message keeps wake_at, the retry delivers exactly once", async () => {
-        const ctx: any = await mkTestCtx();
-        const a = await ctx.fns.agent.start({ model: "mock:test" });
-        await ctx.fns.procs.db.run({ sql: "UPDATE agents SET wake_at = 1000, wake_reason = 'check' WHERE id = ?", params: [a.id] });
-        failOn(ctx, "INSERT INTO messages");
-        await expect(ctx.fns.agent.deliverWakes({ now: 2000 })).rejects.toThrow("injected crash");
-        const kept = (await ctx.fns.procs.db.select({ sql: "SELECT wake_at FROM agents WHERE id = ?", params: [a.id] }))[0];
-        expect(Number(kept.wake_at)).toBe(1000);
-        expect(await userMessages(ctx, a.id)).toHaveLength(0);
-        expect((await ctx.fns.agent.deliverWakes({ now: 2000 })).delivered).toEqual([a.id]);
-        expect((await ctx.fns.agent.deliverWakes({ now: 3000 })).delivered).toEqual([]);
-        const msgs = await userMessages(ctx, a.id);
-        expect(msgs).toHaveLength(1);
-        expect(msgs[0]).toMatchObject({ content: "Wake-up: check", message_type: "wake_up" });
-        expect(msgs[0].excluded_from_cursor ?? false).toBe(false);
-    });
-
     test("watch: a crash while writing the message leaves the job due, the retry delivers exactly once", async () => {
         const ctx: any = await mkTestCtx();
         const a = await ctx.fns.agent.start({ model: "mock:test" });

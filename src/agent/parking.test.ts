@@ -33,6 +33,12 @@ function limitInfo(over: Partial<types.llm.FailureInfo> = {}): types.llm.Failure
     } as types.llm.FailureInfo;
 }
 
+const parkWake = async (ctx: any, id: string) => {
+    const parked = (await ctx.fns.session.load({ id })).scratchpad.parked;
+    const job = parked?.wakeJobId ? (await ctx.fns.procs.db.select({ sql: "SELECT id, status, next_at, prompt FROM jobs WHERE id = ?", params: [parked.wakeJobId] }))[0] : null;
+    return job ? { ...job, next_at: Number(job.next_at) } : null;
+};
+
 describe("usage-limit parking", () => {
     test("parks every agent sharing the credential, not the one that failed", async () => {
         const ctx: any = await mkTestCtx();
@@ -46,19 +52,23 @@ describe("usage-limit parking", () => {
         expect(result.parked).not.toContain(other.id);
 
         const rows = await ctx.fns.procs.db.select({
-            sql: "SELECT id, wake_at, wake_reason, next_run_at, last_error FROM agents WHERE id IN (?, ?) ORDER BY id",
+            sql: "SELECT id, next_run_at, last_error FROM agents WHERE id IN (?, ?) ORDER BY id",
             params: [a.id, b.id],
         });
+        const wakes: number[] = [];
         for (const row of rows) {
             // A wait, not a failure: no error badge, no pending run, a wake set
             // after the reset moment.
-            expect(Number(row.wake_at)).toBeGreaterThan(RESETS_AT);
+            const wake = (await parkWake(ctx, row.id))!;
+            expect(wake.status).toBe("running");
+            expect(wake.next_at).toBeGreaterThan(RESETS_AT);
+            expect(String(wake.prompt)).toContain("usage limit");
             expect(row.last_error).toBeNull();
             expect(row.next_run_at).toBeNull();
-            expect(String(row.wake_reason)).toContain("usage limit");
+            wakes.push(wake.next_at);
         }
         // Jitter must spread the group, otherwise they all hit the API together.
-        expect(Number(rows[0].wake_at)).not.toBe(Number(rows[1].wake_at));
+        expect(wakes[0]).not.toBe(wakes[1]);
 
         const parked = (await ctx.fns.session.load({ id: a.id })).scratchpad.parked;
         expect(parked).toMatchObject({ reason: "usage_limit", provider: "mock", account: "default", planType: "prolite", resetsAt: RESETS_AT });
@@ -82,21 +92,38 @@ describe("usage-limit parking", () => {
         expect(result.resetsAt).toBe(now + 60_000);
     });
 
-    test("parking preserves a user's own wake and unpark restores it", async () => {
+    test("parking holds a user's own wake back until the quota returns and unpark leaves it alone", async () => {
         const ctx: any = await mkTestCtx();
         const a = await ctx.fns.agent.start({ model: "mock:test" });
         const mine = Date.now() + 30 * 60_000;
-        await ctx.fns.agent.wakeAt({ id: a.id, at: mine, reason: "my own reminder" });
+        const own = await ctx.fns.agent.wake({ id: a.id, at: mine, prompt: "my own reminder" });
 
         await ctx.fns.agent.parkOnUsageLimit({ info: limitInfo() });
-        expect((await ctx.fns.session.load({ id: a.id })).scratchpad.parked.previousWake).toMatchObject({ at: mine, reason: "my own reminder" });
+        const park = (await parkWake(ctx, a.id))!;
+        // own reminder is due while parked: it waits for the parking wake-up instead of firing into the limit
+        await ctx.fns.jobs.poll({ now: mine + 1 });
+        const held = (await ctx.fns.agent.triggers({ id: a.id })).find((t: any) => t.id === own.id);
+        expect(held.status).toBe("active");
+        expect(held.nextAt).toBeGreaterThan(park.next_at);
+        expect((await ctx.fns.session.getMessages({ id: a.id })).some((m: any) => m.content === "my own reminder")).toBe(false);
 
         const un = await ctx.fns.agent.unpark({ id: a.id, reason: "model-switch" });
         expect(un.wasParked).toBe(true);
-        const row = (await ctx.fns.procs.db.select({ sql: "SELECT wake_at, wake_reason FROM agents WHERE id = ?", params: [a.id] }))[0];
-        expect(Number(row.wake_at)).toBe(mine);
-        expect(row.wake_reason).toBe("my own reminder");
         expect((await ctx.fns.session.load({ id: a.id })).scratchpad.parked).toBeUndefined();
+        const after = await ctx.fns.agent.triggers({ id: a.id, status: "all" });
+        expect(after.find((t: any) => t.id === park.id).status).toBe("cancelled");
+        expect(after.find((t: any) => t.id === own.id).status).toBe("active");
+    });
+
+    test("a repeat limit replaces the parking wake-up instead of adding one", async () => {
+        const ctx: any = await mkTestCtx();
+        const a = await ctx.fns.agent.start({ model: "mock:test" });
+        await ctx.fns.agent.parkOnUsageLimit({ info: limitInfo() });
+        const first = (await parkWake(ctx, a.id))!;
+        await ctx.fns.agent.parkOnUsageLimit({ info: limitInfo() });
+        const second = (await parkWake(ctx, a.id))!;
+        expect(second.id).not.toBe(first.id);
+        expect((await ctx.fns.agent.triggers({ id: a.id })).map((t: any) => t.id)).toEqual([second.id]);
     });
 
     test("unpark resumes an agent whose messages went unanswered", async () => {
@@ -119,13 +146,13 @@ describe("usage-limit parking", () => {
         const parked = await ctx.fns.agent.parkOnUsageLimit({ info: limitInfo({ resetsAt: null }), fallbackMs: 60_000, now });
         expect(parked.parked).toEqual([a.id]);
 
-        const wakeAt = Number((await ctx.fns.session.load({ id: a.id })).scratchpad.parked.wakeAt);
-        expect((await ctx.fns.agent.deliverWakes({ now: wakeAt + 1 })).delivered).toEqual([a.id]);
+        const wake = (await parkWake(ctx, a.id))!;
+        await ctx.fns.jobs.poll({ now: wake.next_at + 1 });
 
         const reloaded = await ctx.fns.session.load({ id: a.id });
         expect(reloaded.scratchpad.parked).toBeUndefined();
-        const row = (await ctx.fns.procs.db.select({ sql: "SELECT wake_at, next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
-        expect(row.wake_at).toBeNull();
+        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0]).toMatchObject({ id: wake.id, status: "completed" });
+        const row = (await ctx.fns.procs.db.select({ sql: "SELECT next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
         expect(row.next_run_at).not.toBeNull();
     });
 
@@ -161,13 +188,13 @@ describe("usage-limit parking", () => {
         // Exactly one attempt: the transient path would have scheduled a second.
         expect(calls).toBe(1);
         const row = (await ctx.fns.procs.db.select({
-            sql: "SELECT run_state, last_error, next_run_at, wake_at, last_processed_msg_idx FROM agents WHERE id = ?",
+            sql: "SELECT run_state, last_error, next_run_at, last_processed_msg_idx FROM agents WHERE id = ?",
             params: [a.id],
         }))[0];
         expect(row.run_state).toBe("idle");
         expect(row.last_error).toBeNull();
         expect(row.next_run_at).toBeNull();
-        expect(Number(row.wake_at)).toBeGreaterThan(Date.now());
+        expect((await parkWake(ctx, a.id))!.next_at).toBeGreaterThan(Date.now());
         // The message stayed unread, so the wake-up will answer it.
         expect(Number(row.last_processed_msg_idx)).toBe(-1);
 

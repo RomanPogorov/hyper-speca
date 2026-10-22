@@ -378,7 +378,6 @@ async function workerPass(ctx: Context, inflight: Set<Promise<unknown>>): Promis
         let drained = 0;
         await recoverStaleRuns(ctx, Date.now()).catch(() => undefined);
         await (ctx.fns.agent as any).recoverOrphanedCompactions({}).catch((error: any) => console.error('compaction recovery failed:', error));
-        await ctx.fns.agent.deliverWakes({ now: Date.now() }).catch((error: any) => console.error('wake delivery failed:', error));
         const lastTeamArchiveScan = Number((ctx.state as any).lastTeamArchiveScan ?? 0);
         await ctx.fns.jobs.poll({ now: Date.now() }).catch((error: any) => console.error('job polling failed:', error));
         if (Date.now() - lastTeamArchiveScan >= 10_000) {
@@ -408,10 +407,9 @@ async function workerPass(ctx: Context, inflight: Set<Promise<unknown>>): Promis
             const next = ((await ctx.fns.procs.db.select({
                 sql: `SELECT LEAST(
                         COALESCE((SELECT MIN(next_run_at) FROM agents WHERE run_state = ? AND next_run_at IS NOT NULL AND archived_at IS NULL), ?),
-                        COALESCE((SELECT MIN(wake_at) FROM agents WHERE wake_at IS NOT NULL AND archived_at IS NULL), ?),
                         COALESCE((SELECT MIN(next_at) FROM jobs WHERE status = 'running'), ?)
                       ) AS next`,
-                params: ['idle', Date.now() + MAX_IDLE_MS, Date.now() + MAX_IDLE_MS, Date.now() + MAX_IDLE_MS],
+                params: ['idle', Date.now() + MAX_IDLE_MS, Date.now() + MAX_IDLE_MS],
             })) as any[])[0];
             const nextMs = next?.next ? Number(next.next) - Date.now() : MAX_IDLE_MS;
             const wait = Math.max(50, Math.min(MAX_IDLE_MS, nextMs));
@@ -424,10 +422,9 @@ async function workerPass(ctx: Context, inflight: Set<Promise<unknown>>): Promis
             const next = ((await ctx.fns.procs.db.select({
                 sql: `SELECT LEAST(
                         COALESCE((SELECT MIN(next_run_at) FROM agents WHERE run_state = ? AND next_run_at IS NOT NULL AND archived_at IS NULL), ?),
-                        COALESCE((SELECT MIN(wake_at) FROM agents WHERE wake_at IS NOT NULL AND archived_at IS NULL), ?),
                         COALESCE((SELECT MIN(next_at) FROM jobs WHERE status = 'running'), ?)
                       ) AS next`,
-                params: ['idle', Date.now() + MAX_IDLE_MS, Date.now() + MAX_IDLE_MS, Date.now() + MAX_IDLE_MS],
+                params: ['idle', Date.now() + MAX_IDLE_MS, Date.now() + MAX_IDLE_MS],
             })) as any[])[0];
             const nextMs = next?.next ? Number(next.next) - Date.now() : MAX_IDLE_MS;
             await waitForWork(ctx, Math.max(50, Math.min(MAX_IDLE_MS, nextMs)));
