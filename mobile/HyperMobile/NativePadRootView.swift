@@ -112,7 +112,7 @@ struct NativePadRootView: View {
                 }
             }
             .refreshable { await refreshSelected() }
-            .navigationTitle(servers.selectedProfile.name)
+            .navigationTitle("Chats")
             .searchable(text: $query, prompt: "Search chats")
             .overlay { if selectedWorkspace.isLoading && selectedWorkspace.agents.isEmpty { ProgressView("Connecting…") } }
             .toolbar {

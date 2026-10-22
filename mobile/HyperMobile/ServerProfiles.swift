@@ -282,11 +282,26 @@ struct ServerSwitcherMenu: View {
     }
 
 
+    private var selectedStatus: ServerConnectionDisplay {
+        serverConnectionDisplay(servers.selectedProfile, servers: servers, discovery: discovery)
+    }
+
+
     var body: some View {
         Button { isPresented.toggle() } label: {
-            Image(systemName: "server.rack")
+            HStack(spacing: 6) {
+                Image(systemName: selectedStatus.icon)
+                    .font(.caption)
+                    .foregroundStyle(selectedStatus.color)
+                Text(servers.selectedProfile.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
         }
-        .accessibilityLabel("Switch Hyper server")
+        .accessibilityLabel("Current Hyper server: \(servers.selectedProfile.name). Switch server")
         .popover(isPresented: $isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
             NavigationStack {
                 ScrollViewReader { proxy in

@@ -12,6 +12,7 @@ private enum ChatItem: Identifiable {
 }
 
 struct NativeChatView: View {
+    @EnvironmentObject private var servers: ServerProfileStore
     let agent: AgentSummary
     let baseURL: URL
     let profileID: String?
@@ -208,7 +209,13 @@ struct NativeChatView: View {
                         .accessibilityLabel("Show Canvas")
                 }
             }
-            Text(agent.title).font(.headline).lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(agent.title).font(.headline).lineLimit(1)
+                Label(servers.selectedProfile.name, systemImage: "server.rack")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             AgentActivityStatus(running: store.isRunning)
             Spacer()
             Menu {
@@ -263,7 +270,15 @@ struct NativeChatView: View {
     @ToolbarContentBuilder private var chatToolbar: some ToolbarContent {
         ToolbarItem(placement: .principal) {
             if horizontalSizeClass == .compact {
-                VStack(spacing: 2) { Text(agent.title).font(.headline).lineLimit(1); AgentActivityStatus(running: store.isRunning) }
+                VStack(spacing: 1) {
+                    Text(agent.title).font(.headline).lineLimit(1)
+                    HStack(spacing: 4) {
+                        Image(systemName: "server.rack")
+                        Text(servers.selectedProfile.name).lineLimit(1)
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
             }
         }
         ToolbarItem(placement: .topBarTrailing) {

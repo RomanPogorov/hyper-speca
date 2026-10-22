@@ -122,7 +122,7 @@ struct NativeRootView: View {
                     }
                 }
             }
-            .navigationTitle("Chats")
+            .navigationTitle("Chats · \(servers.selectedProfile.name)")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search chats")
             .toolbar {
