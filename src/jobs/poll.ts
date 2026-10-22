@@ -60,7 +60,7 @@ export default async function (
             // server, alive only while it holds the kill handle (gone after a restart).
             const probe = row.runner === "attached"
                 ? await ctx.fns.jobs.bashProbe({ jobId: id, host: null, alive: ((ctx.state as any).attachedJobs as Map<string, unknown> | undefined)?.has(id) ?? false })
-                : await ctx.fns.jobs.bashProbe({ jobId: id, host: spec.host ?? null });
+                : await ctx.fns.jobs.bashProbe({ jobId: id, host: spec.host ?? null, backend: spec.backend });
             const tail = await ctx.fns.jobs.redact({ spec, text: probe.tail });
             if (probe.state === "done") {
                 const status = row.cancel_requested_at != null ? "cancelled" : probe.exitCode === 0 ? "succeeded" : "failed";
@@ -78,8 +78,8 @@ export default async function (
             // running
             if (now >= Number(row.deadline_at)) {
                 if (row.runner === "attached") ((ctx.state as any).attachedJobs as Map<string, { kill: () => void }> | undefined)?.get(id)?.kill();
-                else await ctx.fns.jobs.bashKill({ jobId: id, host: spec.host ?? null });
-                const after = await ctx.fns.jobs.bashProbe({ jobId: id, host: spec.host ?? null });
+                else await ctx.fns.jobs.bashKill({ jobId: id, host: spec.host ?? null, backend: spec.backend });
+                const after = await ctx.fns.jobs.bashProbe({ jobId: id, host: spec.host ?? null, backend: spec.backend });
                 return await done({ id, status: "timeout", reason: "timeout", exitCode: after.exitCode, tail: await ctx.fns.jobs.redact({ spec, text: after.tail || probe.tail }), bytes: after.bytes || probe.bytes, now });
             }
             // Fast at first (short commands report within ~1 s), then every 5 s.

@@ -80,7 +80,9 @@ export default async function (
         const at = wsCtx.fns.workspace.target({ host: opts.host, path: opts.cwd });
         const title = (opts.title ?? command.split("\n").find((l: string) => l.trim()) ?? command).trim().slice(0, 120);
         // Only references are stored: values are resolved at launch and again for redaction.
-        spec = { title, command, host: at.host, cwd: at.path, env: opts.env ?? {}, secrets: opts.secrets ?? {} };
+        // Local jobs may run under hyperd (setting jobs.backend); SSH hosts always use tmux.
+        const backend = !at.host && (await ctx.fns.settings.getString({ module: "jobs", scopeType: "global", key: "backend", fallback: "tmux" })) === "hyperd" ? "hyperd" : "tmux";
+        spec = { title, command, host: at.host, cwd: at.path, env: opts.env ?? {}, secrets: opts.secrets ?? {}, backend };
         deadline = now + Math.max(1, Math.min(2_592_000, opts.timeout ?? 86_400)) * 1000;
         nextAt = now + 1000;
     }
@@ -100,7 +102,7 @@ export default async function (
                 if (!value) throw new Error(`secret ${name} could not be resolved`);
                 env[name] = value;
             }
-            started = await ctx.fns.jobs.bashStart({ jobId: id, host: spec.host, command: spec.command, cwd: spec.cwd, env });
+            started = await ctx.fns.jobs.bashStart({ jobId: id, host: spec.host, command: spec.command, cwd: spec.cwd, env, backend: spec.backend });
         } catch (error: any) {
             started = { ok: false, error: String(error?.message ?? error) };
         }

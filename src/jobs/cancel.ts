@@ -26,9 +26,10 @@ export default async function (
         const probe = await ctx.fns.jobs.bashProbe({ jobId: job.id, host: null, alive: false });
         await ctx.fns.jobs.finish({ id: job.id, status: "cancelled", reason: "cancelled", exitCode: probe.exitCode, tail: probe.tail, bytes: probe.bytes, notify: false });
     } else if (job.runner === "bash") {
-        const killed = await ctx.fns.jobs.bashKill({ jobId: job.id, host: job.host });
+        const backend = job.spec?.backend;
+        const killed = await ctx.fns.jobs.bashKill({ jobId: job.id, host: job.host, backend });
         if (killed.unreachable) throw new Error(`jobs.cancel: host ${job.host} unreachable; cancel is recorded and will be retried`);
-        const probe = await ctx.fns.jobs.bashProbe({ jobId: job.id, host: job.host });
+        const probe = await ctx.fns.jobs.bashProbe({ jobId: job.id, host: job.host, backend });
         const spec = { secrets: ((await ctx.fns.procs.db.select({ sql: "SELECT spec FROM jobs WHERE id = ?", params: [job.id] })) as any[])[0]?.spec?.secrets };
         await ctx.fns.jobs.finish({ id: job.id, status: "cancelled", reason: "cancelled", exitCode: probe.exitCode, tail: await ctx.fns.jobs.redact({ spec, text: probe.tail }), bytes: probe.bytes, notify: false });
     } else {

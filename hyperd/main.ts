@@ -1,0 +1,415 @@
+// hyperd: a small user-level process supervisor (between tmux, a boot loader and systemd).
+// Reads declarative units, starts each run under its own detached holder, restarts per policy, checks
+// readiness, writes an event journal with seq, and answers a JSON API on a unix socket.
+// State lives in files only (hyperd may be what starts the database).
+//
+//   bun hyperd/main.ts            HYPERD_HOME (default ~/.hyper/run/hyperd), HYPERD_UNITS (default ~/.hyper/units, ':'-separated)
+import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import { checkUnit, loadUnitFile, UNIT_FILE, type Unit } from "./Unit.ts";
+
+const HOME = resolve(process.env.HYPERD_HOME ?? join(homedir(), ".hyper/run/hyperd"));
+const UNIT_DIRS = (process.env.HYPERD_UNITS ?? join(homedir(), ".hyper/units")).split(":").filter(Boolean);
+const HOLDER = join(import.meta.dir, "holder.ts");
+const TICK_MS = Number(process.env.HYPERD_TICK_MS ?? 200);
+mkdirSync(join(HOME, "units"), { recursive: true, mode: 0o700 });
+
+type State = "stopped" | "waiting" | "starting" | "running" | "ready" | "stopping" | "backoff" | "exited" | "failed";
+type Exit = { code: number | null; signal: string | null; at: number; reason: string };
+type Sup = {
+    unit: Unit;
+    source: "file" | "transient";
+    file?: string;
+    state: State;
+    run: number;
+    want: boolean;           // should be running
+    restarts: number;        // in a row
+    startedAt?: number;
+    readyAt?: number;
+    nextAt?: number;         // backoff / next ready probe
+    stopReason?: string;
+    stopDeadline?: number;
+    lastExit?: Exit;
+    logOff: number;
+    carry: string;
+    probing?: boolean;
+    error?: string;
+};
+const units = new Map<string, Sup>();
+
+// ---- events -------------------------------------------------------------------------------------
+const EVENTS = join(HOME, "events.ndjson");
+let seq = 0;
+if (existsSync(EVENTS)) {
+    const lines = readFileSync(EVENTS, "utf8").trimEnd().split("\n");
+    for (let i = lines.length - 1; i >= 0 && !seq; i--) { try { seq = JSON.parse(lines[i]).seq ?? 0; } catch {} }
+}
+const waiters = new Set<() => void>();
+function emit(unit: string, type: string, data: Record<string, unknown> = {}) {
+    const s = units.get(unit);
+    const ev = { seq: ++seq, at: Date.now(), unit, run: s?.run ?? 0, type, owner: s?.unit.owner, ...data };
+    appendFileSync(EVENTS, JSON.stringify(ev) + "\n");
+    for (const w of waiters) w();
+    waiters.clear();
+    return ev;
+}
+function readEvents(after: number, limit: number) {
+    if (!existsSync(EVENTS)) return [];
+    const out: any[] = [];
+    for (const line of readFileSync(EVENTS, "utf8").split("\n")) {
+        if (!line) continue;
+        try { const e = JSON.parse(line); if (e.seq > after) { out.push(e); if (out.length >= limit) break; } } catch {}
+    }
+    return out;
+}
+
+// ---- files ------------------------------------------------------------------------------------------
+const unitDir = (name: string) => join(HOME, "units", name);
+const runDir = (name: string, run: number) => join(unitDir(name), `run-${run}`);
+const readJson = (p: string) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+const alive = (pid: number | null | undefined) => { if (!pid) return false; try { process.kill(pid, 0); return true; } catch (e: any) { return e?.code === "EPERM"; } };
+const pidOf = (name: string, run: number, file: string) => Number(readFileSync(join(runDir(name, run), file), "utf8")) || null;
+function persist(s: Sup) {
+    writeFileSync(join(unitDir(s.unit.name), "state.json"), JSON.stringify({ run: s.run, want: s.want, restarts: s.restarts, state: s.state, startedAt: s.startedAt, readyAt: s.readyAt, lastExit: s.lastExit, logOff: s.logOff, source: s.source, file: s.file }));
+}
+function setState(s: Sup, state: State, data: Record<string, unknown> = {}, event?: string) {
+    s.state = state;
+    persist(s);
+    if (event) emit(s.unit.name, event, data);
+}
+
+// ---- lifecycle --------------------------------------------------------------------------------------
+const kindOf = (u: Unit) => u.kind ?? "service";
+const policyOf = (u: Unit) => u.restart?.policy ?? (kindOf(u) === "service" ? "on-failure" : "no");
+// a terminal session is hung up like a closed terminal window; interactive shells ignore SIGTERM
+const usesPty = (u: Unit) => u.pty === undefined ? kindOf(u) === "session" : !!u.pty;
+const stopSignal = (u: Unit) => u.stop?.signal ?? (usesPty(u) ? "SIGHUP" : "SIGTERM");
+const argv = (u: Unit) => Array.isArray(u.cmd) ? u.cmd : ["bash", "-lc", u.cmd];
+const expand = (p: string) => p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
+
+function register(unit: Unit, source: "file" | "transient", file?: string, env?: Record<string, string>) {
+    mkdirSync(unitDir(unit.name), { recursive: true, mode: 0o700 });
+    writeFileSync(join(unitDir(unit.name), "spec.json"), JSON.stringify({ unit, source, file }, null, 2));
+    if (env) writeFileSync(join(unitDir(unit.name), "env.pending.json"), JSON.stringify(env), { mode: 0o600 });
+    const prev = units.get(unit.name);
+    if (prev) { prev.unit = unit; prev.source = source; prev.file = file; persist(prev); return prev; }
+    const s: Sup = { unit, source, file, state: "stopped", run: 0, want: false, restarts: 0, logOff: 0, carry: "" };
+    units.set(unit.name, s);
+    persist(s);
+    return s;
+}
+
+function launch(s: Sup) {
+    const u = s.unit;
+    s.run += 1;
+    const dir = runDir(u.name, s.run);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const pty = u.pty === undefined ? kindOf(u) === "session" : u.pty;
+    writeFileSync(join(dir, "launch.json"), JSON.stringify({
+        cmd: argv(u), cwd: u.cwd ? expand(u.cwd) : undefined,
+        pty: pty ? { cols: (typeof pty === "object" && pty.cols) || 120, rows: (typeof pty === "object" && pty.rows) || 40 } : false,
+    }));
+    // env: unit env plus one-shot env handed over by the API (secrets); the holder deletes env.json after reading.
+    const pending = join(unitDir(u.name), "env.pending.json");
+    const env = { ...(u.env ?? {}), ...(readJson(pending) ?? {}) };
+    writeFileSync(join(dir, "env.json"), JSON.stringify(env), { mode: 0o600 });
+    const h = Bun.spawn(["bun", HOLDER, dir], { cwd: dir, detached: true, stdio: ["ignore", "ignore", "ignore"] } as any);
+    h.unref();
+    s.startedAt = Date.now(); s.readyAt = undefined; s.logOff = 0; s.carry = ""; s.stopReason = undefined; s.stopDeadline = undefined; s.error = undefined;
+    s.nextAt = Date.now() + (u.ready?.intervalMs ?? 500);
+    setState(s, u.ready ? "starting" : "running", { holderPid: h.pid, runDir: dir }, "started");
+    if (!u.ready) markReady(s);
+}
+
+function markReady(s: Sup) {
+    s.readyAt = Date.now();
+    setState(s, "ready", { afterMs: s.readyAt - (s.startedAt ?? s.readyAt) }, "ready");
+}
+
+function start(s: Sup) {
+    s.want = true;
+    if (["starting", "running", "ready", "stopping"].includes(s.state)) { persist(s); return; }
+    s.restarts = 0;
+    const missing = (s.unit.after ?? []).filter((d) => units.get(d)?.state !== "ready");
+    if (missing.length) { setState(s, "waiting", { for: missing }, s.state === "waiting" ? undefined : "waiting"); return; }
+    launch(s);
+}
+
+function signalRun(s: Sup, sig: string) {
+    const child = (() => { try { return pidOf(s.unit.name, s.run, "child.pid"); } catch { return null; } })();
+    if (!child) return false;
+    try { process.kill(-child, sig as any); return true; } catch {}
+    try { process.kill(child, sig as any); return true; } catch { return false; }
+}
+
+function stop(s: Sup, reason = "stopped") {
+    s.want = false;
+    if (s.state === "waiting" || s.state === "backoff") { setState(s, "stopped", { reason }, "stopped"); return; }
+    if (!["starting", "running", "ready"].includes(s.state)) { persist(s); return; }
+    s.stopReason = reason;
+    s.stopDeadline = Date.now() + (s.unit.stop?.timeoutMs ?? 10_000);
+    signalRun(s, stopSignal(s.unit));
+    setState(s, "stopping", { reason, signal: stopSignal(s.unit) }, "stopping");
+}
+
+function onExit(s: Sup, exit: Exit) {
+    s.lastExit = exit;
+    // a run that stayed up for a while (or passed a real ready check) resets the crash-loop counter
+    if (exit.at - (s.startedAt ?? exit.at) >= 10_000 || (s.unit.ready && s.readyAt)) s.restarts = 0;
+    const failed = exit.reason === "lost" || exit.signal != null || exit.code !== 0;
+    emit(s.unit.name, "exited", { code: exit.code, signal: exit.signal, reason: exit.reason, ms: exit.at - (s.startedAt ?? exit.at) });
+    const policy = policyOf(s.unit);
+    const again = s.want && !s.stopReason && (policy === "always" || (policy === "on-failure" && failed));
+    if (!again) { s.want = false; setState(s, failed && !s.stopReason ? "failed" : "exited"); return; }
+    const max = s.unit.restart?.maxRestarts ?? 0;
+    if (max && s.restarts >= max) { s.want = false; setState(s, "failed", { restarts: s.restarts }, "gave_up"); return; }
+    const [first, cap] = s.unit.restart?.backoffMs ?? [1000, 30_000];
+    const inMs = Math.min(cap, first * 2 ** Math.min(10, s.restarts));
+    s.restarts += 1;
+    s.nextAt = Date.now() + inMs;
+    setState(s, "backoff", { inMs, attempt: s.restarts }, "restarting");
+}
+
+// ---- tick -------------------------------------------------------------------------------------------
+const toRe = (p: string) => { const m = /^\/(.*)\/([a-z]*)$/.exec(p); return m ? new RegExp(m[1], m[2]) : null; };
+const matches = (p: string, text: string) => { const re = toRe(p); return re ? re.test(text) : text.includes(p); };
+
+function readNewOutput(s: Sup): string {
+    const log = join(runDir(s.unit.name, s.run), "out.log");
+    let size = 0;
+    try { size = statSync(log).size; } catch { return ""; }
+    if (size <= s.logOff) return "";
+    const len = Math.min(size - s.logOff, 1 << 20);
+    const fd = openSync(log, "r");
+    const buf = Buffer.alloc(len);
+    readSync(fd, buf, 0, len, s.logOff);
+    closeSync(fd);
+    s.logOff += len;
+    return buf.toString("utf8");
+}
+
+async function probe(s: Sup, text: string): Promise<boolean> {
+    const r = s.unit.ready!;
+    if (r.log !== undefined) return matches(r.log, text);
+    if (r.http) { try { const res = await fetch(r.http, { signal: AbortSignal.timeout(2000) }); return res.ok; } catch { return false; } }
+    if (r.tcp !== undefined) {
+        const [host, port] = String(r.tcp).includes(":") ? String(r.tcp).split(":") : ["127.0.0.1", String(r.tcp)];
+        try { const sock = await Bun.connect({ hostname: host, port: Number(port), socket: { data() {} } }); sock.end(); return true; } catch { return false; }
+    }
+    if (r.exec) { try { const p = Bun.spawn(r.exec, { stdio: ["ignore", "ignore", "ignore"], cwd: s.unit.cwd ? expand(s.unit.cwd) : undefined }); return (await p.exited) === 0; } catch { return false; } }
+    return true;
+}
+
+async function tick() {
+    const now = Date.now();
+    for (const s of units.values()) {
+        const name = s.unit.name;
+        try {
+            if (s.state === "waiting" && s.want) {
+                if ((s.unit.after ?? []).every((d) => units.get(d)?.state === "ready")) launch(s);
+                continue;
+            }
+            if (s.state === "backoff" && s.want && now >= (s.nextAt ?? 0)) { launch(s); continue; }
+            if (!["starting", "running", "ready", "stopping"].includes(s.state)) continue;
+
+            // output: log_match events and ready.log
+            const fresh = readNewOutput(s);
+            if (fresh) {
+                const text = s.carry + fresh;
+                const lines = text.split(/\r?\n/);
+                s.carry = lines.pop()!.slice(-4096);
+                let n = 0;
+                for (const line of lines) for (const p of s.unit.logMatch ?? []) if (n < 20 && matches(p, line)) { n++; emit(name, "log_match", { pattern: p, line: line.slice(0, 500) }); }
+                if (s.state === "starting" && s.unit.ready?.log !== undefined && matches(s.unit.ready.log, text)) markReady(s);
+            }
+
+            // exit
+            const dir = runDir(name, s.run);
+            const ex = readJson(join(dir, "exit.json"));
+            if (ex) {
+                // drain the tail for log_match before reporting the exit
+                const rest = readNewOutput(s);
+                if (rest) for (const line of (s.carry + rest).split(/\r?\n/)) for (const p of s.unit.logMatch ?? []) if (line && matches(p, line)) emit(name, "log_match", { pattern: p, line: line.slice(0, 500) });
+                onExit(s, { code: ex.code, signal: ex.signal, at: ex.at, reason: s.stopReason ?? (ex.error ? "start" : "exit") });
+                continue;
+            }
+            const holder = (() => { try { return pidOf(name, s.run, "holder.pid"); } catch { return null; } })();
+            if (holder && !alive(holder) && !existsSync(join(dir, "exit.json"))) {
+                onExit(s, { code: null, signal: null, at: now, reason: "lost" });
+                continue;
+            }
+            if (!holder && now - (s.startedAt ?? now) > 10_000) { onExit(s, { code: null, signal: null, at: now, reason: "lost" }); continue; }
+
+            if (s.state === "stopping" && now >= (s.stopDeadline ?? Infinity)) { signalRun(s, "SIGKILL"); s.stopDeadline = Infinity; }
+            if (s.unit.ttlMs && (s.state === "running" || s.state === "ready" || s.state === "starting") && now - (s.startedAt ?? now) >= s.unit.ttlMs) stop(s, "ttl");
+
+            if (s.state === "starting" && s.unit.ready && s.unit.ready.log === undefined && !s.probing && now >= (s.nextAt ?? 0)) {
+                s.probing = true;
+                s.nextAt = now + (s.unit.ready.intervalMs ?? 500);
+                probe(s, "").then((ok) => { if (ok && s.state === "starting") markReady(s); }).finally(() => { s.probing = false; });
+            }
+            if (s.state === "starting" && s.unit.ready && now - (s.startedAt ?? now) > (s.unit.ready.timeoutMs ?? 60_000) && !s.error) {
+                s.error = "ready timeout";
+                emit(name, "unhealthy", { reason: "ready timeout" });
+            }
+        } catch (error: any) {
+            if (s.error !== String(error?.message ?? error)) { s.error = String(error?.message ?? error); emit(name, "error", { error: s.error }); }
+        }
+    }
+}
+
+// ---- recovery and unit files ------------------------------------------------------------------------
+function recover() {
+    for (const name of readdirSync(join(HOME, "units"))) {
+        const spec = readJson(join(unitDir(name), "spec.json"));
+        const st = readJson(join(unitDir(name), "state.json"));
+        if (!spec?.unit) continue;
+        let unit: Unit;
+        try { unit = checkUnit(spec.unit, name); } catch { continue; }
+        const s: Sup = { unit, source: spec.source, file: spec.file, state: st?.state ?? "stopped", run: st?.run ?? 0, want: !!st?.want, restarts: st?.restarts ?? 0,
+            startedAt: st?.startedAt, readyAt: st?.readyAt, lastExit: st?.lastExit, logOff: st?.logOff ?? 0, carry: "" };
+        units.set(name, s);
+        // the next tick finds exit.json / a dead holder; a live holder is simply adopted
+        if (["starting", "running", "ready", "stopping"].includes(s.state)) {
+            const holder = (() => { try { return pidOf(name, s.run, "holder.pid"); } catch { return null; } })();
+            emit(name, "adopted", { holderPid: holder, alive: alive(holder) });
+        }
+        if (s.state === "backoff") s.nextAt = Date.now();
+    }
+}
+
+async function scanFiles(autostart: boolean) {
+    const seen = new Set<string>();
+    const errors: string[] = [];
+    for (const d of UNIT_DIRS) {
+        const dir = expand(d);
+        if (!existsSync(dir)) continue;
+        for (const f of readdirSync(dir).sort()) {
+            if (!UNIT_FILE.test(f)) continue;
+            const path = join(dir, f);
+            try {
+                const unit = await loadUnitFile(path);
+                if (seen.has(unit.name)) throw new Error(`duplicate unit name ${unit.name}`);
+                seen.add(unit.name);
+                const prev = units.get(unit.name);
+                const changed = !prev || JSON.stringify(prev.unit) !== JSON.stringify(unit);
+                const s = register(unit, "file", path);
+                if (changed) emit(unit.name, prev ? "changed" : "loaded", { file: path });
+                // autostart only for units hyperd has not seen before; known ones keep their recovered want/state
+                if (autostart && !prev && (unit.autostart ?? kindOf(unit) === "service") && !s.want && ["stopped", "exited", "failed"].includes(s.state)) start(s);
+            } catch (error: any) {
+                errors.push(String(error?.message ?? error).startsWith(f) ? String(error.message) : `${f}: ${error?.message ?? error}`);
+            }
+        }
+    }
+    return { units: [...seen], errors };
+}
+
+// ---- API --------------------------------------------------------------------------------------------
+function view(s: Sup) {
+    const dir = s.run ? runDir(s.unit.name, s.run) : null;
+    let bytes = 0;
+    try { if (dir) bytes = statSync(join(dir, "out.log")).size; } catch {}
+    const pid = (() => { try { return dir ? pidOf(s.unit.name, s.run, "child.pid") : null; } catch { return null; } })();
+    return { name: s.unit.name, kind: kindOf(s.unit), state: s.state, want: s.want, run: s.run, pid, source: s.source, file: s.file, owner: s.unit.owner,
+        startedAt: s.startedAt, readyAt: s.readyAt, restarts: s.restarts, lastExit: s.lastExit, error: s.error, bytes, runDir: dir, unit: s.unit };
+}
+const json = (data: unknown, status = 200) => Response.json(data, { status });
+const fail = (msg: string, status = 400) => json({ error: msg }, status);
+
+async function handle(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const body = req.method === "POST" ? await req.json().catch(() => ({})) as any : {};
+    if (url.pathname === "/health") return json({ ok: true, pid: process.pid, seq, units: units.size, home: HOME });
+    if (url.pathname === "/status") return json({ pid: process.pid, seq, units: [...units.values()].map(view) });
+    if (url.pathname === "/reload" && req.method === "POST") return json(await scanFiles(!!body.autostart));
+    if (url.pathname === "/events") {
+        const after = Number(url.searchParams.get("after") ?? 0);
+        const limit = Math.min(1000, Number(url.searchParams.get("limit") ?? 500));
+        const wait = Math.min(60_000, Number(url.searchParams.get("wait") ?? 0));
+        let events = readEvents(after, limit);
+        if (!events.length && wait > 0) {
+            await new Promise<void>((r) => { const t = setTimeout(r, wait); waiters.add(() => { clearTimeout(t); r(); }); });
+            events = readEvents(after, limit);
+        }
+        return json({ seq, events });
+    }
+    if (url.pathname === "/run" && req.method === "POST") {
+        // transient unit (like systemd-run): body { unit, env? }; env is handed to the holder once and never stored in spec.json
+        let unit: Unit;
+        try { unit = checkUnit({ kind: "task", ...body.unit }, "run"); } catch (e: any) { return fail(e.message); }
+        const prev = units.get(unit.name);
+        if (prev && ["starting", "running", "ready", "stopping", "waiting", "backoff"].includes(prev.state)) return fail(`unit ${unit.name} is ${prev.state}`, 409);
+        const s = register(unit, "transient", undefined, body.env);
+        start(s);
+        return json(view(s));
+    }
+    if (parts[0] !== "units") return fail("not found", 404);
+    const s = parts[1] ? units.get(parts[1]) : undefined;
+    if (!parts[1]) return json([...units.values()].map(view));
+    if (!s) return fail(`no unit ${parts[1]}`, 404);
+    const action = parts[2];
+    if (!action && req.method === "GET") return json(view(s));
+    if (!action && req.method === "DELETE") {
+        if (["starting", "running", "ready", "stopping"].includes(s.state)) return fail(`unit ${s.unit.name} is ${s.state}; stop it first`, 409);
+        units.delete(s.unit.name);
+        rmSync(unitDir(s.unit.name), { recursive: true, force: true });
+        emit(s.unit.name, "removed");
+        return json({ removed: s.unit.name });
+    }
+    if (action === "start") { start(s); return json(view(s)); }
+    if (action === "stop") { stop(s, body.reason ?? "stopped"); return json(view(s)); }
+    if (action === "restart") {
+        if (["starting", "running", "ready"].includes(s.state)) {
+            stop(s, "restart");
+            const until = Date.now() + (s.unit.stop?.timeoutMs ?? 10_000) + 5000;
+            while (s.state === "stopping" && Date.now() < until) await Bun.sleep(100);
+        }
+        s.stopReason = undefined;
+        start(s);
+        return json(view(s));
+    }
+    if (action === "logs") {
+        const run = Number(url.searchParams.get("run") ?? s.run);
+        const log = join(runDir(s.unit.name, run), "out.log");
+        if (!run || !existsSync(log)) return json({ run, bytes: 0, offset: 0, text: "" });
+        const size = statSync(log).size;
+        const limit = Math.max(1, Math.min(1 << 20, Number(url.searchParams.get("limit") ?? 20_000)));
+        let off = Number(url.searchParams.get("offset") ?? -limit);
+        if (off < 0) off = Math.max(0, size + off);
+        const text = await Bun.file(log).slice(off, Math.min(size, off + limit)).text();
+        return json({ run, bytes: size, offset: off, next: Math.min(size, off + limit), text });
+    }
+    if (action === "input" && req.method === "POST") {
+        const sock = join(runDir(s.unit.name, s.run), "pty.sock");
+        if (!existsSync(sock)) return fail("not running", 409);
+        const data = String(body.data ?? "");
+        await new Promise<void>((res, rej) => {
+            Bun.connect({ unix: sock, socket: { open(c) { c.write(data); c.flush(); setTimeout(() => { c.end(); res(); }, 30); }, data() {}, error(_c, e) { rej(e); }, connectError(_c, e) { rej(e); } } }).catch(rej);
+        });
+        return json({ written: data.length });
+    }
+    return fail("not found", 404);
+}
+
+// ---- boot -------------------------------------------------------------------------------------------
+const SOCK = join(HOME, "hyperd.sock");
+const pidFile = join(HOME, "hyperd.pid");
+const other = Number(existsSync(pidFile) ? readFileSync(pidFile, "utf8") : 0);
+if (other && other !== process.pid && alive(other)) { console.error(`hyperd already running (pid ${other})`); process.exit(1); }
+writeFileSync(pidFile, String(process.pid));
+rmSync(SOCK, { force: true });
+recover();
+emit("hyperd", "daemon_started", { pid: process.pid });
+const server = Bun.serve({ unix: SOCK, fetch: handle, idleTimeout: 0 } as any);
+chmodSync(SOCK, 0o600);
+const scan = await scanFiles(true);
+if (scan.errors.length) emit("hyperd", "unit_errors", { errors: scan.errors });
+let ticking = false;
+setInterval(async () => { if (ticking) return; ticking = true; try { await tick(); } finally { ticking = false; } }, TICK_MS);
+console.log(`hyperd ${process.pid} on ${SOCK}, ${units.size} units`);
+const shutdown = () => { emit("hyperd", "daemon_stopping", { pid: process.pid }); server.stop(true); rmSync(SOCK, { force: true }); rmSync(pidFile, { force: true }); process.exit(0); };
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

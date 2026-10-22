@@ -25,9 +25,22 @@ export default async function (
         cwd?: string;
         /** Environment variables exported before the command, secrets included. */
         env?: Record<string, string>;
+        /** tmux session (default) or a transient hyperd unit named after the job (local only). @default "tmux" */
+        backend?: "tmux" | "hyperd";
     },
 ): Promise<{ ok: boolean; error?: string }> {
     if (!/^[A-Za-z0-9_-]+$/.test(opts.jobId)) throw new Error("jobs.bashStart: invalid job id " + opts.jobId);
+    if (opts.backend === "hyperd") {
+        if (opts.host) return { ok: false, error: "hyperd backend runs local jobs only" };
+        try {
+            await ctx.fns.hyperd.ensure({});
+            // env (secrets included) goes to the holder once and is never written to the unit spec
+            await ctx.fns.hyperd.run({ name: opts.jobId, kind: "task", cmd: ["bash", "-c", ctx.fns.remote.shellPrelude({}) + opts.command], cwd: opts.cwd, env: opts.env, owner: "job:" + opts.jobId });
+            return { ok: true };
+        } catch (error: any) {
+            return { ok: false, error: String(error?.message ?? error) };
+        }
+    }
     const q = (s: string) => ctx.fns.remote.quote({ value: s });
     const dir = `$HOME/.hyper-jobs/${opts.jobId}`;
     const exports = Object.entries(opts.env ?? {}).map(([k, v]) => {

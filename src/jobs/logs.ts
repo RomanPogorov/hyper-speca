@@ -23,6 +23,15 @@ export default async function (
     if (job.runner !== "bash" && job.runner !== "attached") throw new Error(`jobs.logs: job ${job.id} (${job.runner}) has no output`);
     const limit = Math.max(1, Math.min(200_000, Math.floor(opts.limit ?? 20_000)));
     const offset = Math.floor(opts.offset ?? -20_000);
+    if (job.spec?.backend === "hyperd") {
+        const r = await ctx.fns.hyperd.logs({ name: job.id, offset, limit }).catch((error: any) => {
+            if (/no unit/.test(String(error?.message))) return { bytes: 0, offset: 0, text: "" };
+            throw error;
+        });
+        const secrets = ((await ctx.fns.procs.db.select({ sql: "SELECT spec FROM jobs WHERE id = ?", params: [job.id] })) as any[])[0]?.spec?.secrets;
+        const u = await ctx.fns.hyperd.call({ path: "/units/" + job.id }).catch(() => null);
+        return { id: job.id, status: job.status, bytes: r.bytes, offset: r.offset, text: await ctx.fns.jobs.redact({ spec: { secrets }, text: r.text }), path: u?.runDir ? u.runDir + "/out.log" : "", host: null };
+    }
     const log = `$HOME/.hyper-jobs/${job.id}/out.log`;
     const r = await ctx.fns.jobs.sh({
         host: job.host,

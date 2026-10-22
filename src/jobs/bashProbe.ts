@@ -21,11 +21,28 @@ export default async function (
         tailBytes?: number;
         /** For jobs without a tmux session (moved to the background from a foreground call): whether the process is known to be running. */
         alive?: boolean;
+        /** Where the job runs. @default "tmux" */
+        backend?: "tmux" | "hyperd";
     },
 ): Promise<{ state: "done" | "running" | "gone" | "unreachable"; exitCode: number | null; bytes: number; tail: string; error?: string }> {
     if (!/^[A-Za-z0-9_-]+$/.test(opts.jobId)) throw new Error("jobs.bashProbe: invalid job id " + opts.jobId);
     const dir = `$HOME/.hyper-jobs/${opts.jobId}`;
     const n = Math.max(0, Math.min(100_000, Math.floor(opts.tailBytes ?? 4000)));
+    if (opts.backend === "hyperd") {
+        let u: any;
+        try { u = await ctx.fns.hyperd.call({ path: "/units/" + opts.jobId, timeoutMs: 10_000 }); }
+        catch (error: any) {
+            const msg = String(error?.message ?? error);
+            if (/no unit/.test(msg)) return { state: "gone", exitCode: null, bytes: 0, tail: "" };
+            return { state: "unreachable", exitCode: null, bytes: 0, tail: "", error: msg };
+        }
+        const log = n ? await ctx.fns.hyperd.logs({ name: opts.jobId, offset: -n, limit: n }).catch(() => ({ text: "", bytes: u.bytes ?? 0 })) : { text: "", bytes: u.bytes ?? 0 };
+        if (["exited", "failed"].includes(u.state) && u.lastExit) {
+            if (u.lastExit.reason === "lost") return { state: "gone", exitCode: null, bytes: log.bytes, tail: log.text };
+            return { state: "done", exitCode: u.lastExit.code ?? (u.lastExit.signal ? 128 + (({ SIGHUP: 1, SIGINT: 2, SIGKILL: 9, SIGTERM: 15 } as Record<string, number>)[u.lastExit.signal] ?? 0) : null), bytes: log.bytes, tail: log.text };
+        }
+        return { state: "running", exitCode: null, bytes: log.bytes, tail: log.text };
+    }
     const script = [
         `if [ -f "${dir}/exit" ]; then echo "STATE=done $(cat "${dir}/exit")"; elif ${opts.alive === undefined ? `tmux has-session -t '=hj-${opts.jobId}' 2>/dev/null` : opts.alive ? "true" : "false"}; then echo STATE=running; else echo STATE=gone; fi`,
         `echo "BYTES=$(wc -c < "${dir}/out.log" 2>/dev/null | tr -d ' ' || echo 0)"`,
