@@ -3,14 +3,16 @@
 //   a parking alarm (scratchpad.parked) gets spec.park and its job id in the parking mark.
 // - agent_attachments (external event subscriptions) → jobs kind 'subscription', runner 'attach';
 //   attachment_deliveries.attachment_id now references jobs(id). Event ids and deliveries stay.
+// hyper-code2: `left(x || '', n)` — see 20331022120000_schedules: Postgres 18.2 reports invalid UTF8 when
+// left() on a compressed text cuts inside a Cyrillic character; the concatenation detoasts it whole first.
 const upSql = `
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'agents' AND column_name = 'wake_at') THEN
     EXECUTE $q$
 INSERT INTO jobs (id, kind, runner, spec, state, status, owner_id, created_by, agent_id, prompt, execution_id, next_at, created_at, started_at, updated_at)
 SELECT 'tr_wake_' || a.id || '_' || a.wake_at, 'schedule', 'at',
-       CASE WHEN (a.scratchpad::jsonb)->'parked' IS NOT NULL THEN jsonb_build_object('title', left(COALESCE(a.wake_reason, 'Scheduled wake-up'), 120), 'park', true)
-            ELSE jsonb_build_object('title', left(COALESCE(a.wake_reason, 'Scheduled wake-up'), 120)) END,
+       CASE WHEN (a.scratchpad::jsonb)->'parked' IS NOT NULL THEN jsonb_build_object('title', left(COALESCE(a.wake_reason, 'Scheduled wake-up') || '', 120), 'park', true)
+            ELSE jsonb_build_object('title', left(COALESCE(a.wake_reason, 'Scheduled wake-up') || '', 120)) END,
        '{}'::jsonb, 'running', a.created_by, 'migration', a.id, 'Wake-up: ' || COALESCE(a.wake_reason, 'Scheduled wake-up'),
        'tr_wake_' || a.id || '_' || a.wake_at, a.wake_at, a.updated_at, a.updated_at, a.updated_at
   FROM agents a WHERE a.wake_at IS NOT NULL AND a.archived_at IS NULL

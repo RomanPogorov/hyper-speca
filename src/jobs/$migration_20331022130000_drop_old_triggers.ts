@@ -1,6 +1,8 @@
 // Final step of v2: wake/cron/watch live in jobs + job_runs. Copy anything still left in the old
 // tables (rows created by a pre-v2 worker after 20331022120000_schedules ran), then drop them.
 // Idempotent: every copy is ON CONFLICT DO NOTHING.
+// hyper-code2: `left(x || '', n)` — see 20331022120000_schedules: Postgres 18.2 reports invalid UTF8 when
+// left() on a compressed text cuts inside a Cyrillic character; the concatenation detoasts it whole first.
 const upSql = `
 INSERT INTO jobs (id, kind, runner, spec, state, status, outcome_reason, owner_id, created_by, agent_id, prompt,
                   execution_id, next_at, created_at, started_at, deadline_at, finished_at, updated_at)
@@ -8,7 +10,7 @@ SELECT t.id,
        CASE WHEN t.kind = 'watch' THEN 'subscription' ELSE 'schedule' END,
        t.kind,
        jsonb_strip_nulls(jsonb_build_object(
-           'title', left(t.prompt, 120),
+           'title', left(t.prompt || '', 120),
            'expression', t.config->'expression',
            'timezone', t.timezone,
            'predicate', t.config->'predicate',
@@ -36,7 +38,7 @@ ON CONFLICT DO NOTHING;
 INSERT INTO jobs (id, kind, runner, spec, state, status, owner_id, created_by, agent_id, prompt,
                   execution_id, next_at, created_at, started_at, deadline_at, updated_at)
 SELECT w.id, 'subscription', 'watch',
-       jsonb_build_object('title', left(w.reason, 120), 'predicate', w.predicate, 'opts', w.opts, 'everyMs', w.interval_ms, 'mode', 'once'),
+       jsonb_build_object('title', left(w.reason || '', 120), 'predicate', w.predicate, 'opts', w.opts, 'everyMs', w.interval_ms, 'mode', 'once'),
        jsonb_build_object('attempts', w.attempts),
        'running', a.created_by, 'migration', w.agent_id, w.reason,
        w.id, w.next_check_at, w.created_at, w.created_at, w.timeout_at, w.created_at
