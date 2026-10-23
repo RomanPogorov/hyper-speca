@@ -26,6 +26,8 @@ export function serviceFile(target: ServiceTarget, o: { bun?: string; repo?: str
     const home = o.home ?? homedir();
     const PATH = o.path ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
     const main = `${repo}/hyperd/main.ts`;
+    // --no-env-file: the daemon runs in the repo, and bun would load the repo .env into its own env and hand
+    // it to every unit — a service then starts with a stale DATABASE_URL after .env changes.
     const log = `${home}/.hyper/run/hyperd/daemon.log`;
     if (target === "launchd-system" || target === "launchd-user") {
         const label = launchdLabel(user);
@@ -35,7 +37,7 @@ export function serviceFile(target: ServiceTarget, o: { bun?: string; repo?: str
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>${label}</string>
-${system ? `  <key>UserName</key><string>${xml(user)}</string>\n` : ""}  <key>ProgramArguments</key><array><string>${xml(bun)}</string><string>${xml(main)}</string></array>
+${system ? `  <key>UserName</key><string>${xml(user)}</string>\n` : ""}  <key>ProgramArguments</key><array><string>${xml(bun)}</string><string>--no-env-file</string><string>${xml(main)}</string></array>
   <key>WorkingDirectory</key><string>${xml(repo)}</string>
   <key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(PATH)}</string><key>HOME</key><string>${xml(home)}</string><key>HYPERD_SUPERVISED</key><string>1</string></dict>
   <key>RunAtLoad</key><true/>
@@ -75,7 +77,7 @@ ${system ? `User=${user}\n` : ""}WorkingDirectory=${repo}
 Environment=${q(`HOME=${home}`)}
 Environment=${q(`PATH=${PATH}`)}
 Environment=HYPERD_SUPERVISED=1
-ExecStart=${q(bun)} ${q(main)}
+ExecStart=${q(bun)} --no-env-file ${q(main)}
 Restart=always
 RestartSec=2
 KillMode=process

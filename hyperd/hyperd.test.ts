@@ -200,12 +200,14 @@ describe("install", () => {
             expect(Bun.spawnSync(["plutil", "-lint", p]).exitCode).toBe(0);
         }
         expect(serviceFile("launchd-user", o).content).not.toContain("UserName");
+        // the daemon must not load the repo .env into the env it hands to units
+        expect(f.content).toContain("<string>--no-env-file</string>");
     });
     test("systemd unit keeps holders alive when the daemon stops", () => {
         const f = serviceFile("systemd-user", o);
         expect(f.path).toBe("/home/ann/.config/systemd/user/hyperd.service");
         expect(f.content).toContain("KillMode=process");
-        expect(f.content).toContain('ExecStart=/usr/local/bin/bun "/srv/hyper & co/hyperd/main.ts"');
+        expect(f.content).toContain('ExecStart=/usr/local/bin/bun --no-env-file "/srv/hyper & co/hyperd/main.ts"');
         expect(f.content).not.toContain("User=");
         expect(f.install.join("\n")).toContain("enable-linger ann");
         expect(serviceFile("systemd-system", o).content).toContain("User=ann");
