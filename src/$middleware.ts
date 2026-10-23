@@ -36,6 +36,15 @@ export default async function (ctx: Context, session: Session | null, opts: { re
     if (opts.req.method !== "GET") return;
     const agent = /^\/(?:a|agent)\/([A-Za-z0-9_-]+)/.exec(url.pathname)?.[1];
     if (!agent || agent === "new") return;
+    // An agent's page opened as a page (a link, a notification, a bookmark) goes to the person's
+    // interface when they chose another one; ?ui=hyper keeps Hyper's own.
+    if (/^\/(?:a|agent)\/[A-Za-z0-9_-]+\/?$/.test(url.pathname) && url.searchParams.get("ui") !== "hyper"
+        && opts.req.headers.get("hx-request") !== "true" && (opts.req.headers.get("sec-fetch-dest") ?? "document") === "document") {
+        const ui = await ctx.fns.ui.provider({}).catch(() => null);
+        if (ui && ui.name !== "hyper") {
+            return new Response(null, { status: 303, headers: { location: ui.agent.replaceAll("{id}", encodeURIComponent(agent)), "cache-control": "no-store" } });
+        }
+    }
     const state = ((ctx.state as any).screen ??= { nextId: 1, pending: new Map() });
     state.here = { url: url.pathname + url.search, agentId: agent, at: new Date().toISOString() };
 }
