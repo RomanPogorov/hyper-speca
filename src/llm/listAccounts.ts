@@ -37,6 +37,10 @@ export default async function (
     resetCredits: types.llm.UsageSnapshot["resetCredits"];
     parkedAgents: number;
     needsReconnect: boolean;
+    /** Whose personal account this is ("" = shared by everybody). */
+    owner: string;
+    /** It is the caller's own personal account. */
+    mine: boolean;
 }>> {
     const now = opts?.now ?? Date.now();
     const filter = opts?.provider;
@@ -119,7 +123,13 @@ export default async function (
         }
     }
 
-    return out;
+    // Personal subscriptions: each person sees their own and the shared ones, never another person's.
+    const owners: Map<string, string> = await ctx.fns.llm.accountOwners({});
+    const me = await ctx.fns.auth.ownerId({});
+    return out
+        .map((item) => ({ ...item, owner: owners.get(`${item.provider}/${item.account}`) ?? "" }))
+        .filter((item) => !item.owner || item.owner === me)
+        .map((item) => ({ ...item, mine: !!item.owner }));
 }
 
 function entry(provider: string, account: string, source: "file" | "oauth" | "keychain" | "node", byKey: Map<string, any>, reconnectKeys: Set<string>) {

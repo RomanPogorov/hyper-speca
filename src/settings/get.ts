@@ -1,7 +1,9 @@
 // Resolution chain:
 //   0. Instance settings file ~/.hyper/settings/$settings_<module>.json — only for scope='global'
 //      (settings.files); a key fixed there wins over the database.
-//   1. DB row (explicit override).
+//   1. The person's own value (scope 'user', scope_id = auth.ownerId) — only for scope='global' reads,
+//      and only for keys somebody has a personal value of (settings.userKeys, kept in memory).
+//   1b. DB row (explicit override).
 //   2. Declared default — only for scope='global':
 //        a. descriptor.env  → ctx.env[<that>] (parsed by descriptor.type)
 //        b. descriptor.default
@@ -28,6 +30,17 @@ export default async function (ctx: Context, _session: Session | null, opts: Get
     if ((opts.scopeType ?? 'global') === 'global' && !opts.scopeId) {
         const fixed = (await ctx.fns.settings.files({})).values[`${opts.module}.${opts.key}`];
         if (fixed) return fixed.value;
+        const userKeys: Set<string> = await ctx.fns.settings.userKeys({});
+        if (userKeys.has(`${opts.module}.${opts.key}`)) {
+            const owner = await ctx.fns.auth.ownerId({});
+            if (owner) {
+                const mine = (await ctx.fns.procs.db.select({
+                    sql: "SELECT value FROM settings WHERE module = ? AND scope_type = 'user' AND scope_id = ? AND key = ?",
+                    params: [opts.module, owner, opts.key],
+                }) as Array<{ value: string }>)[0];
+                if (mine) return JSON.parse(mine.value);
+            }
+        }
     }
     const row = (await ctx.fns.procs.db.select({
         sql: `SELECT value

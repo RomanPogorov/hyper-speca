@@ -28,7 +28,10 @@ const mkCtx = (env: Record<string, string> = {}) => {
             getString: (opts: any) => getString(ctx, null, opts),
             get: (opts: any) => get(ctx, null, opts),
             files: async () => ({ values: {} }),   // no instance settings files in unit-test
+            userKeys: async () => new Set(),       // nobody has personal settings
         },
+        auth: { ownerId: async () => "" },         // open instance: no owner
+        llm: { accountOwners: async () => new Map() }, // every LLM account is shared
         secrets: {
             resolve: (opts: any) => resolveSecret(ctx, null, opts),
             resolveSetting: (opts: any) => resolveSetting(ctx, null, opts),
@@ -105,5 +108,15 @@ describe("ai.resolveEndpoint", () => {
     });
 
 
+
+    test("personal subscriptions: mine is picked, another person's is refused", async () => {
+        const ctx: any = mkCtx({ KIMI_API_KEY: "k" });
+        ctx.fns.llm.accountOwners = async () => new Map([["kimi/alice", "u-alice"], ["kimi/bob", "u-bob"]]);
+        ctx.fns.auth.ownerId = async () => "u-alice";
+        expect((await resolve(ctx, null, { model: "kimi:kimi-k2" })).account).toBe("alice");
+        await expect(resolve(ctx, null, { model: "kimi/bob:kimi-k2" })).rejects.toThrow("another person's");
+        ctx.fns.auth.ownerId = async () => "u-carol";
+        expect((await resolve(ctx, null, { model: "kimi:kimi-k2" })).account).toBe("default");
+    });
 
 });

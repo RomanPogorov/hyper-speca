@@ -17,13 +17,20 @@ export default async function (ctx: Context, _session: Session | null, _opts?: {
     }
     // Reauth tokens are authoritative too: discovering their non-secret names
     // keeps the account list correct even if old metadata was never updated.
+    // Each person sees their own accounts and the shared ones — never another person's mailbox.
+    const me = await ctx.fns.auth.ownerId({});
     const rows = await ctx.fns.procs.db.select({
-        sql: "SELECT name FROM local_secrets WHERE namespace = ? AND name LIKE 'token:%' ORDER BY name",
+        sql: "SELECT name, owner_id FROM local_secrets WHERE namespace = ? AND name LIKE 'token:%' ORDER BY name",
         params: ["google"],
     }).catch(() => [] as any[]) as any[];
+    const mine = new Set<string>(), others = new Set<string>();
     for (const row of rows) {
         const account = String(row.name ?? "").slice("token:".length);
-        if (account.includes("@")) found.add(account);
+        if (!account.includes("@")) continue;
+        const owner = String(row.owner_id ?? "");
+        (owner === "" || owner === me ? mine : others).add(account);
     }
+    for (const account of mine) found.add(account);
+    for (const account of others) if (!mine.has(account)) found.delete(account);
     return [...found].sort();
 }

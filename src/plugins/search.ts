@@ -28,7 +28,9 @@ export default async function (
     const limit = Math.max(1, Math.min(20, Math.floor(opts.limit ?? 5)));
     const perPlugin = Math.max(1, Math.min(20, Math.floor(opts.functionsPerPlugin ?? 5)));
     const mode = opts.mode ?? "hybrid";
-    const plugins = (ctx.fns.procs.modules.list({}) as any[]).filter((module: any) => module.plugin);
+    // plugins the caller turned off for themselves are not offered
+    const off = new Set(await ctx.fns.plugins.offFor({}).catch(() => [] as string[]));
+    const plugins = (ctx.fns.procs.modules.list({}) as any[]).filter((module: any) => module.plugin && !off.has(module.name));
     const byName = new Map(plugins.map((plugin: any) => [plugin.name, plugin]));
     const owners = new Map<string, any>();
     for (const plugin of plugins) for (const name of [...new Set(plugin.fns as string[])]) owners.set(name, plugin);

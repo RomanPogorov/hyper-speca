@@ -26,9 +26,7 @@ export default async function (
     const { namespace, name } = ctx.fns.secrets.parseRef({ ref: opts.ref });
     const value = String(opts.value ?? "");
     if (!value) throw new Error("secret value is required");
+    // putLocal decides whose it is (the caller's own unless it updates a shared one) and drops stale cache
     const result = await ctx.fns.secrets.putLocal({ namespace, name, value, source: String(opts.source ?? "agent") });
-    const root = ((ctx.state as any).secrets ??= {});
-    const cache: Map<string, string> = (root.values ??= new Map());
-    cache.set(`${namespace}/${name}`, value);
     return { ref: `secret://${namespace}/${name}`, version: result.version };
 }

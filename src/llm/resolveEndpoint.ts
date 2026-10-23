@@ -25,8 +25,22 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     const model = opts.model;
     const m = /^([a-z][\w\-]*)(?:\/([\w\-.]+))?:(.+)$/.exec(model);
     const provider = m ? m[1]! : "lmstudio";
-    const account = (m?.[2] ?? "default");
+    let account = (m?.[2] ?? "default");
     const modelId = m ? m[3]! : model;
+    // Personal subscriptions (llm_account_owners): a model without an account uses the caller's own
+    // account of that provider when they have one; another person's account is never used.
+    const owners: Map<string, string> = await ctx.fns.llm.accountOwners({});
+    if (owners.size) {
+        const me = await ctx.fns.auth.ownerId({});
+        if (!m?.[2] && me) {
+            const own = [...owners].find(([key, owner]) => owner === me && key.startsWith(`${provider}/`));
+            if (own) account = own[0].slice(provider.length + 1);
+        }
+        const owner = owners.get(`${provider}/${account}`);
+        if (owner && owner !== me) {
+            throw new Error(`${provider}${account === "default" ? "" : `/${account}`} is another person's personal subscription; connect your own in Settings → Models, or use a shared account`);
+        }
+    }
     // hyper/<node>:<model> — another Hyper relays the call through its own
     // provider (docs/hyper-node.md). The wire api and billing kind come from the
     // node's cached catalogue; the bearer is our client token for that node.

@@ -23,13 +23,15 @@ export default async function (
 ): Promise<string | null> {
     const ref = String(opts.ref ?? "").trim();
         if (!ref) return null;
+        // The cache is per owner: the same name may be one person's own key and another's shared one.
+        const owner = await ctx.fns.auth.ownerId({});
         // secret://<namespace>/<name> names an entry written by secrets.set or
         // secureInput.prompt({ saveAs }) — local storage only, no bootstrap.
         if (ref.startsWith("secret://")) {
             const parsed = ctx.fns.secrets.parseRef({ ref });
             const root = ((ctx.state as any).secrets ??= {});
             const cache: Map<string,string> = (root.values ??= new Map());
-            const cacheKey = `${parsed.namespace}/${parsed.name}`;
+            const cacheKey = `${owner}|${parsed.namespace}/${parsed.name}`;
             if (!opts.refresh && cache.has(cacheKey)) return cache.get(cacheKey)!;
             const local = await ctx.fns.secrets.getLocal(parsed);
             if (local != null) cache.set(cacheKey, local);
@@ -41,7 +43,7 @@ export default async function (
         const name = String(opts.name ?? digest).trim();
         const root = ((ctx.state as any).secrets ??= {});
         const cache: Map<string,string> = (root.values ??= new Map());
-        const cacheKey = `${namespace}/${name}`;
+        const cacheKey = `${owner}|${namespace}/${name}`;
         if (!opts.refresh && cache.has(cacheKey)) return cache.get(cacheKey)!;
         if (!opts.refresh) {
             const local = await ctx.fns.secrets.getLocal({ namespace, name });
@@ -49,7 +51,8 @@ export default async function (
         }
         const value = await ctx.fns.secrets.resolve({ ref });
         if (value == null) return null;
-        await ctx.fns.secrets.putLocal({ namespace, name, value, source: provider + "-bootstrap" });
+        // bootstrapped from the instance's env/1Password: shared, as it was before owners existed
+        await ctx.fns.secrets.putLocal({ namespace, name, value, source: provider + "-bootstrap", owner: "" });
         cache.set(cacheKey, value);
         return value;
 }

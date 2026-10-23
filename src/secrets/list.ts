@@ -17,18 +17,20 @@ export default async function (
         /** Maximum entries returned. @default 100 @minimum 1 @maximum 500 */
         limit?: number;
     },
-): Promise<Array<{ ref: string; namespace: string; name: string; source: string; version: number; createdAt: number; updatedAt: number }>> {
+): Promise<Array<{ ref: string; namespace: string; name: string; source: string; version: number; createdAt: number; updatedAt: number; personal: boolean }>> {
+    // Only what the caller may use: their own entries and the shared ones; an own entry hides the shared one of the same name.
+    const me = await ctx.fns.auth.ownerId({});
     const namespace = String(opts.namespace ?? "").trim();
     const query = String(opts.query ?? "").trim().toLowerCase();
     if (namespace && !/^[A-Za-z0-9][\w.-]*$/.test(namespace)) throw new Error("invalid secret namespace");
     const limit = Math.max(1, Math.min(500, Math.floor(opts.limit ?? 100)));
     const rows = await ctx.fns.procs.db.select({
-      sql: `SELECT namespace,name,source,version,created_at AS "createdAt",updated_at AS "updatedAt"
+      sql: `SELECT DISTINCT ON (namespace,name) namespace,name,source,version,created_at AS "createdAt",updated_at AS "updatedAt",owner_id <> '' AS personal
             FROM local_secrets
-            WHERE (? = '' OR namespace = ?)
+            WHERE owner_id IN (?, '') AND (? = '' OR namespace = ?)
               AND (? = '' OR lower(namespace || '/' || name) LIKE ? ESCAPE '\\')
-            ORDER BY namespace,name LIMIT ?`,
-      params: [namespace, namespace, query, query ? `%${query.replace(/[\%_]/g, "\\$&")}%` : "", limit],
+            ORDER BY namespace,name,owner_id = '' LIMIT ?`,
+      params: [me, namespace, namespace, query, query ? `%${query.replace(/[\%_]/g, "\\$&")}%` : "", limit],
     }) as any[];
-    return rows.map(row => ({ ref: `secret://${row.namespace}/${row.name}`, namespace: String(row.namespace), name: String(row.name), source: String(row.source), version: Number(row.version), createdAt: Number(row.createdAt), updatedAt: Number(row.updatedAt) }));
+    return rows.map(row => ({ ref: `secret://${row.namespace}/${row.name}`, namespace: String(row.namespace), name: String(row.name), source: String(row.source), version: Number(row.version), createdAt: Number(row.createdAt), updatedAt: Number(row.updatedAt), personal: !!row.personal }));
 }

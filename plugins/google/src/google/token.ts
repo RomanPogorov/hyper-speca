@@ -15,7 +15,9 @@ export default async function (ctx: Context, _session: Session | null, opts?: { 
     }
 
     const cache = ((ctx.state as any).google ??= { tokens: {} as Record<string, { access_token: string; expires_at: number }> });
-    const cached = cache.tokens[account];
+    // per owner: the cache must not hand one person's token to another who names the same account
+    const cacheKey = `${await ctx.fns.auth.ownerId({})}|${account}`;
+    const cached = cache.tokens[cacheKey];
     if (cached && Date.now() < cached.expires_at - 60_000) return { account, access_token: cached.access_token };
     const tokenName = `token:${account}`;
     // Every authorized account uses the same stable local key. secrets.get
@@ -45,6 +47,6 @@ export default async function (ctx: Context, _session: Session | null, opts?: { 
         await ctx.fns.secrets.putLocal({ namespace: "google", name: tokenName, value: JSON.stringify(token), source: "oauth-refresh" });
     }
 
-    cache.tokens[account] = { access_token: token.access_token, expires_at: token.expires_at };
+    cache.tokens[cacheKey] = { access_token: token.access_token, expires_at: token.expires_at };
     return { account, access_token: token.access_token };
 }
