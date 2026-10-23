@@ -67,11 +67,20 @@ final class HyperMeshDiscovery: ObservableObject {
         var request = URLRequest(url: Self.catalogURL)
         request.timeoutInterval = 12
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        if let revision = UserDefaults.standard.string(forKey: revisionKey) { request.setValue("\"\(revision)\"", forHTTPHeaderField: "If-None-Match") }
+        if !services.isEmpty, let revision = UserDefaults.standard.string(forKey: revisionKey) {
+            request.setValue("\"\(revision)\"", forHTTPHeaderField: "If-None-Match")
+        }
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { throw DiscoveryError.invalidResponse }
-            if http.statusCode == 304 { hasFreshCatalog = true; message = nil; return }
+            if http.statusCode == 304 {
+                // The catalog is unchanged, but the server-profile store may be empty after an app
+                // reinstall/update. Re-apply the cached services instead of returning an empty UI.
+                for service in services { serverStore.upsertDiscovered(name: service.title, url: service.url) }
+                hasFreshCatalog = true
+                message = nil
+                return
+            }
             guard (200..<300).contains(http.statusCode) else { throw DiscoveryError.http(http.statusCode) }
             let catalog = try JSONDecoder().decode(HyperMeshCatalogResponse.self, from: data)
             services = catalog.services
