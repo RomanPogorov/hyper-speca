@@ -111,7 +111,8 @@ async function renderFile(ctx: Context, path: string, tabParam: string, wide = f
     } else if (tab === "preview" && isAudio) {
         contentEl = `<div class="flex flex-1 flex-col items-center justify-center gap-5 bg-base-200 p-8"><i class="ph ph-waveform text-6xl text-faint"></i><div class="text-sm font-medium text-muted">${esc(name)}</div><audio src="${rawUrl}" class="w-full max-w-xl" controls preload="metadata"></audio></div>`;
     } else if (tab === "preview" && isPdf) {
-        contentEl = `<iframe src="${rawUrl}" title="${esc(name)}" class="flex-1 w-full border-0 bg-base-200"></iframe>`;
+        // ?raw=1: a frame is a navigation (Sec-Fetch-Dest: iframe), so without it the Files page would frame itself.
+        contentEl = `<iframe src="${rawUrl}?raw=1" title="${esc(name)}" class="flex-1 w-full border-0 bg-base-200"></iframe>`;
     } else if (tab === "preview" && isMd) {
         let html = await ctx.fns.markdown.render({ source: content, fileBaseDir: assetsBase && !host ? dirname(path) : undefined });
         // Shown inside another page (the canvas), relative images would resolve against that page's URL.

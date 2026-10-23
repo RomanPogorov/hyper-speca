@@ -7,7 +7,7 @@
  * HTML preview's own app.js or style.css is never answered with UI markup.
  * Without that header (curl, older clients) Accept decides: text/html → page,
  * image/audio/video → raw; a bare wildcard only counts as a page for document
- * types (Markdown, text, JSON…), never for CSS or JavaScript.
+ * types (Markdown, text, JSON…), never for CSS or JavaScript. `?raw=1` always means the raw file.
  * @param opts.req Incoming request.
  * @param opts.path Requested file path; its extension is the last hint.
  */
@@ -21,6 +21,8 @@ export default function (
         path: string;
     },
 ): boolean {
+    // ?raw=1 asks for the bytes outright: a PDF preview frames the file URL, and a frame is a navigation.
+    if (new URL(opts.req.url).searchParams.get("raw") === "1") return false;
     const dest = opts.req.headers.get("sec-fetch-dest");
     if (dest) return dest === "document" || dest === "iframe" || dest === "frame";
     const accept = opts.req.headers.get("accept") ?? "";

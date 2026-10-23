@@ -40,9 +40,17 @@ describe("GET /files — media preview", () => {
                 const html = await (await ctx.fns.procs.http.dispatch({ url: `/files?path=${encodeURIComponent(path)}` })).text();
                 expect(html).toContain(element);
                 expect(html).toContain(await ctx.fns.files.browserUrl({ path }));
+                if (file === "paper.pdf") expect(html).toContain(`<iframe src="${await ctx.fns.files.browserUrl({ path })}?raw=1"`);
             }
         } finally {
             await rm(dir, { recursive: true, force: true });
         }
+    });
+
+    test("?raw=1 turns a framed file URL from the Files page into the raw bytes", async () => {
+        const ctx = await mkTestCtx();
+        const req = (q: string) => new Request(`http://x/files/absolute/tmp/paper.pdf${q}`, { headers: { "sec-fetch-dest": "iframe" } });
+        expect(ctx.fns.files.isPageRequest({ req: req(""), path: "/tmp/paper.pdf" })).toBe(true);
+        expect(ctx.fns.files.isPageRequest({ req: req("?raw=1"), path: "/tmp/paper.pdf" })).toBe(false);
     });
 });
