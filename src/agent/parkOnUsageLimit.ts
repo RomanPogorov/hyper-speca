@@ -88,7 +88,7 @@ export default async function (
                 },
             });
             // A repeat 429 replaces the earlier parking wake-up instead of adding a second one.
-            if (updated.result) await ctx.fns.agent.cancelTrigger({ id, triggerId: String(updated.result) });
+            if (updated.result) await ctx.fns.jobs.cancel({ id: String(updated.result) });
             // Parking replaces the pending run and clears the error: this is a
             // wait, not a failure, and "send a message to retry" is bad advice.
             await ctx.fns.procs.db.run({

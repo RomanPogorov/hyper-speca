@@ -29,6 +29,7 @@ export default function (
         createdAt: Number(r.created_at),
         startedAt: num(r.started_at),
         deadlineAt: num(r.deadline_at),
+        nextAt: r.status === "running" ? num(r.next_at) : null,
         finishedAt: num(r.finished_at),
         spec: (() => { const { secrets: _s, ...rest } = spec; return rest; })(),
         result: json(r.result),

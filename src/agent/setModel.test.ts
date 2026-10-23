@@ -44,7 +44,7 @@ describe("agent.setModel", () => {
 
         expect((await ctx.fns.session.load({ id: a.id })).scratchpad.parked).toBeUndefined();
         const row = (await ctx.fns.procs.db.select({ sql: "SELECT next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
-        expect(await ctx.fns.agent.triggers({ id: a.id })).toEqual([]);
+        expect(await ctx.fns.ui.automationRows({ id: a.id })).toEqual([]);
         expect(row.next_run_at).not.toBeNull();
     });
 

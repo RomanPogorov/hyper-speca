@@ -1,12 +1,12 @@
 /**
- * Lists everything an agent has running or scheduled: background commands, timers, reminders, cron schedules, watches and subscriptions
+ * Lists everything an agent has running or scheduled: background commands, wake-ups, cron schedules, watches and subscriptions
  *
- * One table holds all of it. kind "exec" = a background command (runner bash, attached or sleep; cancel with
- * jobs.cancel, read output with jobs.logs); kind "schedule" = a durable trigger made by agent.wake (runner at),
- * agent.cron (runner cron) or agent.watch (runner watch) — the same ids that agent.triggers shows and
- * agent.cancelTrigger cancels; kind "subscription" = an agent.attach event subscription (runner attach).
- * Status words: running (agent.triggers calls it active), succeeded, failed, cancelled, timeout, lost.
- * Use to see what is still running before starting the same command again, or to find an id to cancel.
+ * The one list. kind "exec" = a background command (bash or eval with `background`); kind "schedule" = agent.wake
+ * (runner at), agent.cron (runner cron) or agent.watch (runner watch); kind "subscription" = agent.attach (runner
+ * attach). Stop any of them with jobs.cancel({ id }); read a command's output with jobs.logs({ id }).
+ * Status: running (a command still running, or a wake-up/cron/watch/subscription still waiting — there is no separate
+ * "scheduled" status; nextAt says when it fires), succeeded, failed, cancelled, timeout, lost.
+ * Use to see what is still running before starting the same thing again, or to find an id to cancel.
  * @param opts.agentId Agent whose jobs to list; defaults to the calling agent.
  * @param opts.status "running" (default), "finished" or "all".
  * @param opts.limit Maximum rows. @default 20

@@ -52,5 +52,5 @@ export default async function (
         agentId: id, runner: "watch", prompt, nextAt: now, deadlineAt: timeoutAt,
         spec: { predicate: opts.predicate, opts: opts.opts ?? {}, everyMs, mode, ...(opts.onTimeoutPrompt ? { onTimeoutPrompt: String(opts.onTimeoutPrompt) } : {}) },
     });
-    return { id: made.id, nextAt: now, timeoutAt, hint: "List: ctx.fns.agent.triggers({ id }) or ctx.fns.jobs.list({}); cancel: ctx.fns.agent.cancelTrigger({ id, triggerId }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
+    return { id: made.id, nextAt: now, timeoutAt, hint: "List: ctx.fns.jobs.list({}); cancel: ctx.fns.jobs.cancel({ id }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
 }

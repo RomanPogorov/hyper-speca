@@ -47,7 +47,7 @@ export default async function (
     if (!parked) return { id, wasParked: false, resumed: false };
 
     // The parking wake-up is its own job: cancel it unless it is what woke us.
-    if (parked.wakeJobId) await ctx.fns.agent.cancelTrigger({ id, triggerId: String(parked.wakeJobId) });
+    if (parked.wakeJobId) await ctx.fns.jobs.cancel({ id: String(parked.wakeJobId) });
 
     // The run cursor never advanced while parked, so "unread" here means the
     // messages that the exhausted quota prevented from being answered.

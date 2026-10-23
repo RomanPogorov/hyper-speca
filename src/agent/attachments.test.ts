@@ -44,7 +44,7 @@ describe("agent attachments", () => {
 
     });
 
-    test("detach stops the last producer and prevents later delivery", async () => {
+    test("jobs.cancel detaches: stops the last producer and prevents later delivery", async () => {
         const ctx: any = await mkTestCtx();
         const agent = await ctx.fns.agent.start({ model: "mock:test" });
         let stopped = 0;
@@ -53,9 +53,9 @@ describe("agent attachments", () => {
             running: {},
         };
         const attachment = await ctx.fns.agent.attach({ id: agent.id, source: "demo" });
-        expect(await ctx.fns.agent.detach({ id: agent.id, attachmentId: attachment.id })).toEqual({ detached: true });
+        expect((await ctx.fns.jobs.cancel({ id: attachment.id })).status).toBe("cancelled");
         expect(stopped).toBe(1);
-        expect((await ctx.fns.agent.attachments({ id: agent.id, status: "all" }))[0].status).toBe("detached");
+        expect((await ctx.fns.jobs.list({ agentId: agent.id, status: "all" }))[0]).toMatchObject({ runner: "attach", status: "cancelled" });
         expect((await ctx.fns.agent.emitAttachment({ source: "demo", eventId: "x", eventType: "message.new", payload: {} })).deliveries).toBe(0);
     });
 });

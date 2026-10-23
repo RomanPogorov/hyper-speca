@@ -28,7 +28,7 @@ params: Record<string, string> }) {
     const [team, archivedTeam, triggers, metaState, extraSettings] = await Promise.all([
         ctx.fns.agent.team({ agent }),
         ctx.fns.agent.team({ agent, includeArchived: true }),
-        ctx.fns.agent.triggers({ id, status: "all" }),
+        ctx.fns.ui.automationRows({ id, status: "all" }),
         ctx.fns.procs.db.select({ sql: "SELECT value FROM kv WHERE key = ?", params: ["ui:rightPanelCollapsed"] }).catch(() => [] as any[]),
         ctx.fns.ui.agentSettingsBlocks({ agentId: id }),
     ]);

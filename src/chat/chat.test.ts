@@ -86,7 +86,7 @@ describe("chat header parts", () => {
     test("panel draws the cards with their rows; danger rows post with confirm", async () => {
         const { ctx } = await ctxWithAgent({ scratchpad: { plan: { title: "Ship it", tasks: [{ id: "a", title: "first", status: "done" }, { id: "b", title: "second", status: "active" }] } } });
         ctx.state.registry.agent.team = () => [];
-        ctx.state.registry.agent.triggers = () => [];
+        ctx.state.registry.ui.automationRows = () => [];
         const html = await ctx.fns.chat.panel({ agentId: "a1" });
         expect(html).toContain('data-chat-id="appearance"');
         expect(html).toContain('hx-popup="chat.iconPopup"');
@@ -119,7 +119,7 @@ describe("chat header parts", () => {
     test("GET /chat/:id/panel serves the panel", async () => {
         const { ctx } = await ctxWithAgent();
         ctx.state.registry.agent.team = () => [];
-        ctx.state.registry.agent.triggers = () => [];
+        ctx.state.registry.ui.automationRows = () => [];
         const res = await ctx.fns.procs.http.dispatch({ method: "GET", url: "/chat/a1/panel" });
         expect(res.status).toBe(200);
         expect(await res.text()).toContain("Danger zone");

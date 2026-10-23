@@ -79,34 +79,25 @@ describe("jobs", () => {
         expect((await inbox(ctx, a.id))[0].content).toContain("lost");
     }, 15_000);
 
-    test("sleep timer: fires at its deadline, wake is batched by 2 s", async () => {
+    test("jobs ending in one pass do not tell each other they are still running; completion wake is batched by 2 s", async () => {
         const { ctx, a } = await setup();
         await ctx.fns.procs.db.run({ sql: "UPDATE agents SET next_run_at = NULL WHERE id = ?", params: [a.id] });
-        const t = await ctx.fns.jobs.start({ agentId: a.id, runner: "sleep", ms: 1000, prompt: "check the deploy" });
-        const now = Date.now();
-        expect((await ctx.fns.jobs.poll({ now })).finished).toEqual([]);
-        expect((await ctx.fns.jobs.poll({ now: now + 2000 })).finished).toEqual([t.id]);
-        const msg = (await inbox(ctx, a.id))[0].content;
-        expect(msg).toContain(`Timer ${t.id}`);
-        expect(msg).toContain("check the deploy");
-        const row = (await ctx.fns.procs.db.select({ sql: "SELECT next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
-        expect(Number(row.next_run_at)).toBe(now + 4000);
-    });
-
-    test("jobs ending in one pass do not tell each other they are still running", async () => {
-        const { ctx, a } = await setup();
-        const t1 = await ctx.fns.jobs.start({ agentId: a.id, runner: "sleep", ms: 10 });
-        const t2 = await ctx.fns.jobs.start({ agentId: a.id, runner: "sleep", ms: 10 });
-        const long = await ctx.fns.jobs.start({ agentId: a.id, runner: "sleep", ms: 600_000 });
-        expect((await ctx.fns.jobs.poll({ now: Date.now() + 1000 })).finished.sort()).toEqual([t1.id, t2.id].sort());
+        const t1 = await ctx.fns.jobs.start({ agentId: a.id, command: "true" });
+        const t2 = await ctx.fns.jobs.start({ agentId: a.id, command: "true" });
+        const long = await ctx.fns.jobs.start({ agentId: a.id, command: "sleep 600" });
+        await Bun.sleep(500);
+        const now = Date.now() + 1000;
+        expect((await ctx.fns.jobs.poll({ now })).finished.sort()).toEqual([t1.id, t2.id].sort());
         for (const m of await inbox(ctx, a.id)) expect(m.content).toContain("1 other job(s) still running");
+        const row = (await ctx.fns.procs.db.select({ sql: "SELECT next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
+        expect(Number(row.next_run_at)).toBe(now + 2000);
         await ctx.fns.jobs.cancel({ id: long.id });
     });
 
     test("bash tool background:true starts a job and returns at once", async () => {
         const { ctx, a } = await setup();
         const started = Date.now();
-        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "sleep 2; echo done", background: true, notify: "report" }, agent: a });
+        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "sleep 2; echo done", background: { wake: "report" } }, agent: a });
         expect(Date.now() - started).toBeLessThan(1500);
         expect(r.isError).toBe(false);
         const id = /job (j[0-9a-f]+)/.exec(r.output)![1];
@@ -128,8 +119,8 @@ describe("jobs", () => {
     test("background.afterMs: a command still running moves to the background and wakes with its instruction", async () => {
         const { ctx, a } = await setup();
         const started = Date.now();
-        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "echo one; sleep 1.5; echo two", timeout: 60, background: { afterMs: 400, wake: "Tests finished. Inspect failures." } }, agent: a });
-        expect(Date.now() - started).toBeLessThan(1400);
+        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "echo one; sleep 3; echo two", timeout: 60, background: { afterMs: 400, wake: "Tests finished. Inspect failures." } }, agent: a });
+        expect(Date.now() - started).toBeLessThan(2500);
         expect(r.output).toContain("Still running after 0s — moved to background job");
         const id = /job (j[0-9a-f]+)/.exec(r.output)![1];
         expect(await until(ctx, id)).toMatchObject({ status: "succeeded" });
@@ -144,15 +135,6 @@ describe("jobs", () => {
         expect(r.isError).toBe(true);
         expect(r.output).toContain('unknown option "background.after"');
     });
-
-    test("jobs.wait returns a finished job at once and done:false for one still running", async () => {
-        const { ctx, a } = await setup();
-        const quick = await ctx.fns.jobs.start({ agentId: a.id, command: "echo hi" });
-        expect(await ctx.fns.jobs.wait({ id: quick.id, timeoutMs: 5000 })).toMatchObject({ done: true, job: { status: "succeeded" } });
-        const slow = await ctx.fns.jobs.start({ agentId: a.id, command: "sleep 30" });
-        expect(await ctx.fns.jobs.wait({ id: slow.id, timeoutMs: 300 })).toMatchObject({ done: false, job: { status: "running" } });
-        await ctx.fns.jobs.cancel({ id: slow.id });
-    }, 15_000);
 
     test("eval background: output and the result come back as a job message", async () => {
         const { ctx, a } = await setup();

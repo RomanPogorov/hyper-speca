@@ -16,9 +16,12 @@ export default async function (ctx: Context, _session: Session | null, opts: { r
       const timeoutMinutes = Number(form.get("timeoutMinutes") ?? 0);
       await ctx.fns.agent.watch({ id, predicate, opts: predicateOpts, prompt: String(form.get("prompt") ?? "Condition met").trim(), everyMs: Math.max(5000, Number(form.get("everySeconds") ?? 60) * 1000), ...(timeoutMinutes > 0 ? { timeoutMs: timeoutMinutes * 60_000 } : {}), mode: String(form.get("mode") ?? "once") === "edge" ? "edge" : "once", ...(String(form.get("onTimeoutPrompt") ?? "").trim() ? { onTimeoutPrompt: String(form.get("onTimeoutPrompt")) } : {}) });
     } else if (action === "cancel") {
-      await ctx.fns.agent.cancelTrigger({ id, triggerId: String(form.get("triggerId") ?? "") });
+      const triggerId = String(form.get("triggerId") ?? "");
+      if ((await ctx.fns.jobs.get({ id: triggerId })).agentId !== id) throw new Error("not this agent's trigger");
+      await ctx.fns.jobs.cancel({ id: triggerId });
     } else if (action === "cancelAll") {
-      await ctx.fns.agent.cancelAllTriggers({ id });
+      const active = await ctx.fns.procs.db.select({ sql: "SELECT id FROM jobs WHERE agent_id = ? AND runner IN ('at','cron','watch') AND status = 'running'", params: [id] }) as any[];
+      for (const row of active) await ctx.fns.jobs.cancel({ id: String(row.id) });
     } else if (action === "run") {
       const triggerId = String(form.get("triggerId") ?? "");
       await ctx.fns.procs.db.run({ sql: "UPDATE jobs SET next_at=?, updated_at=? WHERE id=? AND agent_id=? AND runner IN ('at','cron','watch') AND status='running'", params: [Date.now(), Date.now(), triggerId, id] });

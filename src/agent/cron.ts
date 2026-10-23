@@ -26,5 +26,5 @@ export default async function (
     if (!id || !prompt || !expression || !timezone) throw new Error("agent.cron: id, expression, timezone and prompt are required");
     const nextAt = await ctx.fns.agent.nextCronAt({ expression, timezone, after: Date.now() });
     const made = await ctx.fns.jobs.schedule({ agentId: id, runner: "cron", prompt, nextAt, spec: { expression, timezone } });
-    return { id: made.id, nextAt, hint: "List: ctx.fns.agent.triggers({ id }) or ctx.fns.jobs.list({}); cancel: ctx.fns.agent.cancelTrigger({ id, triggerId }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
+    return { id: made.id, nextAt, hint: "List: ctx.fns.jobs.list({}); cancel: ctx.fns.jobs.cancel({ id }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
 }

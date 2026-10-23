@@ -39,4 +39,4 @@ parameters:
 - Top-level await works.
 - Use `console.log(...)` or `print(...)` to produce output.
 - Return values are ignored.
-- `background: true` (or `{ afterMs, wake }`) turns a long eval — a crawl, a batch of LLM calls, a big import — into a job: the call returns its id, the code keeps running in this server, its printed output goes to the job log, and you get one `job` message when it ends (exit 0, or 1 when it threw). `jobs.logs`, `jobs.list`, `jobs.wait` work as for bash jobs.
+- `background: true` (or `{ afterMs, wake }`) turns a long eval — a crawl, a batch of LLM calls, a big import — into a job: the call returns its id, the code keeps running in this server, its printed output goes to the job log, and you get one `job` message when it ends (exit 0, or 1 when it threw). `jobs.logs`, `jobs.list` and `jobs.cancel` work as for bash jobs (cancel stops reporting; it cannot interrupt the code).

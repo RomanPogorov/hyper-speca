@@ -2,7 +2,7 @@
  * Checks due background jobs and finishes the ones that ended, timed out or vanished
  *
  * Called by the agent worker loop on every pass. Claims due running jobs with a short lease (so two workers never
- * probe the same job), probes bash jobs in their tmux session, ends sleep timers, runs due wake-ups, cron schedules
+ * probe the same job), probes bash jobs in their tmux session, runs due wake-ups, cron schedules
  * and watches (jobs.tickSchedule), enforces deadlines and honours cancel requests, then calls jobs.finish which
  * messages the agent. Unreachable SSH hosts are retried with backoff
  * and reported as lost only after their deadline.
@@ -49,11 +49,6 @@ export default async function (
                 // Schedules commit their own prompt + state + audit in one transaction.
                 await ctx.fns.jobs.tickSchedule({ row, token, now });
                 return;
-            }
-            if (row.runner === "sleep") {
-                if (row.cancel_requested_at != null) return await done({ id, status: "cancelled", reason: "cancelled", notify: false, now });
-                if (now >= Number(row.deadline_at)) return await done({ id, status: "succeeded", reason: "sleep", now });
-                return await reschedule(Number(row.deadline_at));
             }
             if (row.runner !== "bash" && row.runner !== "attached") return await done({ id, status: "failed", reason: `unknown runner ${row.runner}`, now });
             // "attached": a foreground call moved to the background; the process is a child of this

@@ -7,7 +7,7 @@
  * together reach the agent in one turn.
  * @param opts.id Job id.
  * @param opts.status Final status.
- * @param opts.reason Short machine reason: exit, timeout, cancelled, gone, sleep.
+ * @param opts.reason Short machine reason: exit, timeout, cancelled, gone.
  * @param opts.exitCode Process exit code when known.
  * @param opts.tail Last output bytes (already redacted).
  * @param opts.bytes Total output size in bytes.
@@ -23,7 +23,7 @@ export default async function (
         id: string;
         /** Final status. */
         status: "succeeded" | "failed" | "cancelled" | "timeout" | "lost";
-        /** Short machine reason: exit, timeout, cancelled, gone, sleep. */
+        /** Short machine reason: exit, timeout, cancelled, gone. */
         reason: string;
         /** Process exit code when known. */
         exitCode?: number | null;
@@ -58,11 +58,10 @@ export default async function (
     }
 
     const secs = ms < 10_000 ? (ms / 1000).toFixed(1) : String(Math.round(ms / 1000));
-    const label = row.runner === "sleep" ? `Timer ${opts.id} (${spec.title}) is up after ${secs}s.`
-        : `Background job ${opts.id} ${opts.status === "succeeded" ? "finished" : opts.status} (${opts.reason === "exit" ? `exit ${opts.exitCode}` : opts.reason}) after ${secs}s${spec.host ? ` on ${spec.host}` : ""}: ${spec.title}`;
+    const label = `Background job ${opts.id} ${opts.status === "succeeded" ? "finished" : opts.status} (${opts.reason === "exit" ? `exit ${opts.exitCode}` : opts.reason}) after ${secs}s${spec.host ? ` on ${spec.host}` : ""}: ${spec.title}`;
     const tail = result.tail.trimEnd();
     const lines = [label];
-    if (row.runner !== "sleep") {
+    {
         lines.push(tail ? `Output tail (${result.bytes} bytes total):\n${tail}` : "Output: none (the command printed nothing).");
         if (result.bytes > result.tail.length) lines.push(`Full output: await ctx.fns.jobs.logs({ id: "${opts.id}" })`);
     }

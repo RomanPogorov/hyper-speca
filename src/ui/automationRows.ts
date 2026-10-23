@@ -1,7 +1,9 @@
 /**
- * Lists durable triggers belonging to an agent
+ * Rows of the agent inspector's Automation section: one agent's wake-ups, cron schedules and watches with their last run
  *
- * List one agent’s reminders (agent.wake), cron schedules (agent.cron) and condition watches (agent.watch) with their lifecycle state, next check time and last run. Use to inspect pending, completed, timed-out or cancelled triggers; cancel with agent.cancelTrigger. The same rows also appear in jobs.list as kind "schedule" with status running instead of active; jobs.list additionally shows background commands.
+ * UI helper for the Automation panel, the trigger audit popup and the chat's Wake-ups card. Agents list their jobs
+ * with jobs.list and cancel them with jobs.cancel; this shapes the same jobs rows (runner at, cron, watch) for display,
+ * joined with the latest job_runs row. Status words here are the panel's: active, completed, timed_out, cancelled.
  * @param opts.id Agent identifier.
  * @param opts.status Lifecycle filter. @default active
  */

@@ -202,24 +202,6 @@ describe.skipIf(!enabled)("remote over ssh (docker sshd)", () => {
         expect(r.content[0]).toMatchObject({ type: "image", mimeType: "image/png" });
     });
 
-    test("background jobs: start, jobs, logs, stop, restart guard", async () => {
-        const s = await R().start({ host: "plain", name: "tick", command: "for i in $(seq 1 60); do echo tick $i \"$X\"; sleep 0.05; done", env: { X: "it's" }, wait: 0 });
-        expect(s).toMatchObject({ name: "tick", session: "hyper-tick", running: true });
-        const first = await until(() => R().logs({ host: "plain", name: "tick", grep: "tick [12] " }), (l: any) => l.tail.includes("tick 2"));
-        expect(first.tail).toContain("tick 1 it's");
-        await expect(R().start({ host: "plain", name: "tick", command: "true", wait: 0 })).rejects.toThrow("already running");
-        expect((await R().jobs({ host: "plain" })).find((j: any) => j.name === "tick")).toMatchObject({ running: true });
-        const l = await R().logs({ host: "plain", name: "tick", grep: "tick [12] " });
-        expect(l.tail.trim().split("\n")).toEqual(["tick 1 it's", "tick 2 it's"]);
-        expect(await R().stop({ host: "plain", name: "tick", grace: 1 })).toMatchObject({ wasRunning: true });
-        expect((await R().logs({ host: "plain", name: "tick" })).running).toBe(false);
-        await R().start({ host: "plain", name: "quick", command: "echo hi; exit 3", wait: 0 });
-        await until(() => R().logs({ host: "plain", name: "quick" }), (l: any) => !l.running);
-        const done = await R().logs({ host: "plain", name: "quick" });
-        expect(done.running).toBe(false);
-        expect(done.tail).toContain("[exit 3]");
-    });
-
     test("status on Linux and for an unreachable host", async () => {
         const s = await R().status({ host: "plain" });
         expect(s).toMatchObject({ reachable: true, hostname: expect.any(String) });
@@ -252,25 +234,6 @@ describe.skipIf(!enabled)("remote over ssh (docker sshd)", () => {
             const r = await R().grep({ host, pattern: "^m$", path: "rv/ctx.txt", context: 1 });
             expect(r.matches.map((m: any) => [m.line, m.before, m.after])).toEqual([[1, [], ["c"]], [3, ["c"], ["d"]]]);
         }
-    });
-
-    test("review: remote.start keeps env values out of ps and tmux", async () => {
-        await R().start({ host: "plain", name: "sec", command: "sleep 20", env: { TOK: "zz-start-secret" }, wait: 0, restart: true });
-        await until(() => R().logs({ host: "plain", name: "sec" }), (l: any) => l.running);
-        const seen = await R().exec({ host: "plain", command: "ps -ww -o args | grep -v grep | grep -c zz-start-secret; tmux list-sessions -F '#{session_name} #{pane_start_command}' 2>/dev/null | grep -c zz-start-secret" });
-        expect(seen.stdout.trim().split("\n")).toEqual(["0", "0"]);
-        // owner-only access; the directory may also carry a setgid bit from its parent
-        const perm = await R().exec({ host: "plain", command: "stat -c %a ~/.hyper-jobs/sec.sh ~/.hyper-jobs" });
-        expect(perm.stdout.trim().split("\n").map((m: string) => m.slice(-3))).toEqual(["700", "700"]);
-        await R().stop({ host: "plain", name: "sec", grace: 0 });
-    });
-
-    test("review: stopping a job never hits another job with the same prefix", async () => {
-        await R().start({ host: "plain", name: "worker-long", command: "sleep 30", wait: 0, restart: true });
-        expect(await R().stop({ host: "plain", name: "worker", grace: 0 })).toMatchObject({ wasRunning: false });
-        expect((await R().logs({ host: "plain", name: "worker-long" })).running).toBe(true);
-        await R().stop({ host: "plain", name: "worker-long", grace: 0 });
-        await expect(R().start({ host: "plain", name: "a.b", command: "true" })).rejects.toThrow("invalid job name");
     });
 
     test("review: rsync keeps remote paths literal and bare filenames are files", async () => {

@@ -28,5 +28,5 @@ export default async function (
     const nextAt = opts.at != null ? Math.floor(Number(opts.at)) : now + Math.max(1000, Math.floor(Number(opts.inMs)));
     if (!Number.isFinite(nextAt) || nextAt <= now) throw new Error("agent.wake: time must be in the future");
     const made = await ctx.fns.jobs.schedule({ agentId: id, runner: "at", prompt, nextAt });
-    return { id: made.id, nextAt, hint: "List: ctx.fns.agent.triggers({ id }) or ctx.fns.jobs.list({}); cancel: ctx.fns.agent.cancelTrigger({ id, triggerId }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
+    return { id: made.id, nextAt, hint: "List: ctx.fns.jobs.list({}); cancel: ctx.fns.jobs.cancel({ id }). The prompt arrives as a message when it fires: end your turn, do not sleep or poll." };
 }

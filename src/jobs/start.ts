@@ -1,33 +1,28 @@
 /**
- * Starts a background job (a shell command in tmux, or a plain timer) that messages the agent when it ends
+ * Starts a background shell command that messages the agent when it ends; the bash tool's `background` option calls it
  *
- * Use for work that takes longer than a tool call should block: builds, test suites, deploys, downloads, servers
- * that must come up, or a simple "wake me in N minutes" (runner sleep). Returns at once with the job id. The
+ * Agents use the bash tool with `background` rather than calling this directly. Returns at once with the job id. The
  * command runs in a detached tmux session on this machine or an SSH host, survives a Hyper restart, and when it
  * exits the agent receives ONE inbox message with the exit code, duration and the output tail; several jobs
  * finishing close together are delivered in one wake-up. Read the full output with jobs.logs, stop it with
  * jobs.cancel, see what is running with jobs.list. The bash tool's `background: true` calls this.
- * @param opts.runner "bash" runs opts.command; "sleep" only waits opts.ms and then reports. @default "bash"
- * @param opts.command Shell source for runner bash.
+ * @param opts.command Shell source to run.
  * @param opts.host SSH alias from ~/.ssh/config or "local"; omitted means the agent workspace host.
  * @param opts.cwd Working directory; relative paths resolve against the workspace.
  * @param opts.env Extra environment variables.
  * @param opts.secrets Secret references exposed as environment variables; values are redacted from what the agent reads.
- * @param opts.ms Duration for runner sleep, in milliseconds.
  * @param opts.timeout Seconds after which a still-running job is stopped and reported as timeout. @default 86400
  * @param opts.title Short human label; defaults to the first line of the command.
  * @param opts.prompt Extra instruction appended to the completion message, e.g. "if green, deploy".
  * @param opts.agentId Agent to notify; defaults to the calling agent.
  * @param opts.originToolCallId Tool call that started the job, for the UI.
- * @param opts.quietMs Do not probe or report the job for this long (capped at its deadline): the caller waits for it in the foreground with jobs.wait. @default 0 @minimum 0
+ * @param opts.quietMs Do not probe or report the job for this long (capped at its deadline): the caller is still waiting for it in the foreground. @default 0 @minimum 0
  */
 export default async function (
     ctx: Context,
     session: Session | null,
     opts: {
-        /** "bash" runs opts.command; "sleep" only waits opts.ms and then reports. @default "bash" */
-        runner?: "bash" | "sleep";
-        /** Shell source for runner bash. */
+        /** Shell source to run. */
         command?: string;
         /** SSH alias from ~/.ssh/config or "local"; omitted means the agent workspace host. */
         host?: string;
@@ -37,8 +32,6 @@ export default async function (
         env?: Record<string, string>;
         /** Secret references (op://, env://, secret://ns/name) exposed as environment variables; values are redacted from what the agent reads. */
         secrets?: Record<string, string>;
-        /** Duration for runner sleep, in milliseconds. @minimum 0 @maximum 2592000000 */
-        ms?: number;
         /** Seconds after which a still-running job is stopped and reported as timeout. @default 86400 @minimum 1 @maximum 2592000 */
         timeout?: number;
         /** Short human label; defaults to the first line of the command. */
@@ -49,14 +42,13 @@ export default async function (
         agentId?: string;
         /** Tool call that started the job, for the UI. */
         originToolCallId?: string;
-        /** Do not probe or report the job for this long (capped at its deadline): the caller waits for it in the foreground with jobs.wait. @default 0 @minimum 0 */
+        /** Do not probe or report the job for this long (capped at its deadline): the caller is still waiting for it in the foreground. @default 0 @minimum 0 */
         quietMs?: number;
     },
 ): Promise<types.jobs.Job> {
     const agentId = opts.agentId ?? session?.agentId ?? (session as any)?.agent?.id;
     if (!agentId) throw new Error("jobs.start: no agent to notify (pass agentId)");
-    const runner = opts.runner ?? "bash";
-    if (runner !== "bash" && runner !== "sleep") throw new Error(`jobs.start: unknown runner ${runner}`);
+    const runner = "bash";
     const now = Date.now();
     const id = "j" + Bun.randomUUIDv7().replaceAll("-", "").slice(-10);
     const owner = (await ctx.fns.procs.db.select({ sql: "SELECT created_by FROM agents WHERE id = ?", params: [agentId] }) as any[])[0];
@@ -65,15 +57,9 @@ export default async function (
     let spec: Record<string, any>;
     let deadline: number;
     let nextAt: number;
-    if (runner === "sleep") {
-        const ms = Math.max(0, Math.min(2_592_000_000, Math.floor(opts.ms ?? 0)));
-        if (!ms) throw new Error("jobs.start: runner sleep needs ms > 0");
-        spec = { title: opts.title ?? `sleep ${ms < 10_000 ? (ms / 1000).toFixed(1) : Math.round(ms / 1000)}s`, ms };
-        deadline = now + ms;
-        nextAt = deadline;
-    } else {
+    {
         const command = String(opts.command ?? "");
-        if (!command.trim()) throw new Error("jobs.start: command is required for runner bash");
+        if (!command.trim()) throw new Error("jobs.start: command is required");
         for (const [name, ref] of Object.entries(opts.secrets ?? {})) {
             if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`invalid secret environment variable: ${name}`);
             if (!/^(op|env|secret):\/\//.test(ref)) throw new Error(`secret ${name} must be an op://, env:// or secret:// reference`);
@@ -96,7 +82,7 @@ export default async function (
         params: [id, runner, JSON.stringify(spec), owner.created_by ?? null, session?.user?.id ?? (session?.agentId ? "agent:" + session.agentId : null), agentId, opts.prompt ?? null, opts.originToolCallId ?? null, id, nextAt, now, now, deadline, now],
     });
 
-    if (runner === "bash") {
+    {
         let started: { ok: boolean; error?: string };
         try {
             const env: Record<string, string> = { ...(spec.env as Record<string, string>) };

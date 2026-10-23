@@ -28,7 +28,7 @@ describe("delivery is atomic", () => {
         expect(await userMessages(ctx, a.id)).toHaveLength(0);
         // the failed pass rescheduled it (next_at + 10 s); the next due pass delivers once and completes the watch
         await ctx.fns.jobs.poll({ now: w.nextAt + 20_000 });
-        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0].status).toBe("completed");
+        expect((await ctx.fns.ui.automationRows({ id: a.id, status: "all" }))[0].status).toBe("completed");
         await ctx.fns.jobs.poll({ now: w.nextAt + 120_000 });
         expect(await userMessages(ctx, a.id)).toHaveLength(1);
     });
@@ -49,7 +49,7 @@ describe("delivery is atomic", () => {
         await ctx.fns.jobs.poll({ now: t.nextAt + 1 });
         await ctx.fns.jobs.poll({ now: t.nextAt + 20_000 });
         expect(await userMessages(ctx, a.id)).toHaveLength(1);
-        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0].status).toBe("completed");
+        expect((await ctx.fns.ui.automationRows({ id: a.id, status: "all" }))[0].status).toBe("completed");
     });
 
     test("trigger: a cancel committed before delivery wins", async () => {
@@ -58,12 +58,12 @@ describe("delivery is atomic", () => {
         const t = await ctx.fns.agent.wake({ id: a.id, at: Date.now() + 60_000, prompt: "later" });
         const original = ctx.state.registry.agent.deliver;
         ctx.state.registry.agent.deliver = async (c: any, s: any, o: any) => {
-            await ctx.fns.agent.cancelTrigger({ id: a.id, triggerId: t.id });
+            await ctx.fns.jobs.cancel({ id: t.id });
             return original(c, s, o);
         };
         await ctx.fns.jobs.poll({ now: t.nextAt + 1 });
         expect(await userMessages(ctx, a.id)).toHaveLength(0);
-        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0].status).toBe("cancelled");
+        expect((await ctx.fns.ui.automationRows({ id: a.id, status: "all" }))[0].status).toBe("cancelled");
     });
 
     test("attachment: a crash while writing the message leaves the delivery retryable; the retry delivers once", async () => {

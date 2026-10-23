@@ -28,7 +28,7 @@ Core static pages use the same declarations as module pages; `nav.items` contain
 
 **Simplicity first. DB-first. Server-rendered HTMX fragments plus topic-filtered SSE invalidation. One in-process worker, runs agents in parallel.**
 
-Agent-deferred work uses the unified trigger engine described in [Agent triggers](agent-triggers.md): `agent.wake`, `agent.cron`, and `agent.watch` are rows of the `jobs` table together with background commands ([jobs](jobs.md)) and deliver prompts into the same conversation.
+Agent-deferred work — background commands, wake-ups, cron schedules, condition watches and event subscriptions — is rows of one `jobs` table that deliver a message into the same conversation; see [jobs](jobs.md).
 
 Everything durable lives in Postgres (paradedb). Everything visible to the user comes from a normal HTTP fetch. There is no queue table — debounce, renewable run lease and run state are columns on `agents`. Realtime uses one shared SSE connection in each visible browser tab; events carry topic invalidations only, and live regions refetch current HTML. Hidden tabs close SSE to avoid exhausting browser per-origin connections.
 

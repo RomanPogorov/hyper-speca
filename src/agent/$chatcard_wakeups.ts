@@ -4,7 +4,7 @@ export default {
     icon: "ph-alarm",
     order: 50,
     async render(ctx: Context, _session: Session | null, view: types.chat.RenderContext): Promise<types.chat.CardRow[] | null> {
-        const triggers = await Promise.resolve(ctx.fns.agent.triggers({ id: view.agent.id })).catch(() => [] as any[]);
+        const triggers = await Promise.resolve(ctx.fns.ui.automationRows({ id: view.agent.id })).catch(() => [] as any[]);
         if (!triggers.length) return null;
         const icon = (k: string) => k === "cron" ? "ph-calendar-clock" : k === "watch" ? "ph-eye" : "ph-alarm";
         const when = (t: any) => {

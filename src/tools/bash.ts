@@ -10,7 +10,6 @@
  * @param opts.secrets Secret references exposed as environment variables; values are redacted from output.
  * @param opts.timeout Timeout in seconds.
  * @param opts.background Run as a background job (jobs.start) and return its id at once; the agent is messaged when it ends. An object { afterMs, wake } waits afterMs first: a command done by then returns its normal result, one still running keeps running as the job.
- * @param opts.notify With background — instruction included in the completion message.
  */
 export default async function (
     ctx: Context,
@@ -30,8 +29,6 @@ export default async function (
         timeout?: number;
         /** Run as a background job (jobs.start) and return its id at once; the agent is messaged when it ends. An object { afterMs, wake } waits afterMs first: a command done by then returns its normal result, one still running keeps running as the job. @default false */
         background?: boolean | { afterMs?: number; wake?: string };
-        /** With background — instruction included in the completion message. */
-        notify?: string;
     },
 ): Promise<{ output: string; isError: boolean }> {
     if (opts.background) {
@@ -40,11 +37,11 @@ export default async function (
         // timeout kills the process; afterMs only decides how long this call blocks. The job is started at once
         // either way, so a command still running at afterMs simply goes on — the same process, not a restart.
         const job = await ctx.fns.jobs.start({
-            runner: "bash", command: opts.command, host: opts.host, cwd: opts.cwd, env: opts.env, secrets: opts.secrets,
-            timeout: opts.timeout, prompt: bg.wake ?? opts.notify, originToolCallId: (ctx as any).toolRun?.toolCallId, quietMs: afterMs,
+            command: opts.command, host: opts.host, cwd: opts.cwd, env: opts.env, secrets: opts.secrets,
+            timeout: opts.timeout, prompt: bg.wake, originToolCallId: (ctx as any).toolRun?.toolCallId, quietMs: afterMs,
         });
         if (afterMs > 0) {
-            const waited = await ctx.fns.jobs.wait({ id: job.id, timeoutMs: afterMs });
+            const waited = await waitFor(ctx, job.id, afterMs);
             if (waited.done) return await foreground(ctx, waited.job);
         }
         const after = afterMs > 0 ? `Still running after ${Math.round(afterMs / 1000)}s — moved to background job ${job.id}` : `Started background job ${job.id}`;
@@ -82,6 +79,37 @@ export default async function (
         result.output = result.output.replaceAll(value, "[REDACTED]");
     }
     return result;
+}
+
+// Waits up to timeoutMs for the job this call just started. A job that ends here is recorded without a completion
+// message: the caller returns its result in the foreground.
+async function waitFor(ctx: Context, id: string, timeoutMs: number): Promise<{ done: boolean; job: types.jobs.Job }> {
+    const end = Date.now() + Math.max(0, Math.min(600_000, Math.floor(timeoutMs)));
+    for (let step = 100; ; step = Math.min(1000, step * 2)) {
+        const job = await ctx.fns.jobs.get({ id: id });
+        if (job.status !== "running") return { done: true, job };
+        if (job.runner === "bash" || job.runner === "attached") {
+            const attached = job.runner === "attached";
+            const probe = await ctx.fns.jobs.bashProbe({
+                jobId: job.id,
+                host: attached ? null : job.host,
+                backend: job.spec?.backend,
+                ...(attached ? { alive: ((ctx.state as any).attachedJobs as Map<string, unknown> | undefined)?.has(job.id) ?? false } : {}),
+            });
+            if (probe.state === "done" || probe.state === "gone") {
+                const row = ((await ctx.fns.procs.db.select({ sql: "SELECT spec, cancel_requested_at FROM jobs WHERE id = ?", params: [job.id] })) as any[])[0];
+                const cancelled = row?.cancel_requested_at != null;
+                const status = cancelled ? "cancelled" : probe.state === "gone" ? "lost" : probe.exitCode === 0 ? "succeeded" : "failed";
+                const reason = cancelled ? "cancelled" : probe.state === "gone" ? "gone" : "exit";
+                const tail = await ctx.fns.jobs.redact({ spec: row?.spec ?? {}, text: probe.tail });
+                await ctx.fns.jobs.finish({ id: job.id, status, reason, exitCode: probe.exitCode, tail, bytes: probe.bytes, notify: false });
+                return { done: true, job: await ctx.fns.jobs.get({ id: job.id }) };
+            }
+        }
+        const left = end - Date.now();
+        if (left <= 0) return { done: false, job };
+        await Bun.sleep(Math.min(step, left));
+    }
 }
 
 // A background call that ended within afterMs answers like a foreground one: output, or [exit N] + output.

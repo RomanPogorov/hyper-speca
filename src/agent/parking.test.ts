@@ -102,7 +102,7 @@ describe("usage-limit parking", () => {
         const park = (await parkWake(ctx, a.id))!;
         // own reminder is due while parked: it waits for the parking wake-up instead of firing into the limit
         await ctx.fns.jobs.poll({ now: mine + 1 });
-        const held = (await ctx.fns.agent.triggers({ id: a.id })).find((t: any) => t.id === own.id);
+        const held = (await ctx.fns.ui.automationRows({ id: a.id })).find((t: any) => t.id === own.id);
         expect(held.status).toBe("active");
         expect(held.nextAt).toBeGreaterThan(park.next_at);
         expect((await ctx.fns.session.getMessages({ id: a.id })).some((m: any) => m.content === "my own reminder")).toBe(false);
@@ -110,7 +110,7 @@ describe("usage-limit parking", () => {
         const un = await ctx.fns.agent.unpark({ id: a.id, reason: "model-switch" });
         expect(un.wasParked).toBe(true);
         expect((await ctx.fns.session.load({ id: a.id })).scratchpad.parked).toBeUndefined();
-        const after = await ctx.fns.agent.triggers({ id: a.id, status: "all" });
+        const after = await ctx.fns.ui.automationRows({ id: a.id, status: "all" });
         expect(after.find((t: any) => t.id === park.id).status).toBe("cancelled");
         expect(after.find((t: any) => t.id === own.id).status).toBe("active");
     });
@@ -123,7 +123,7 @@ describe("usage-limit parking", () => {
         await ctx.fns.agent.parkOnUsageLimit({ info: limitInfo() });
         const second = (await parkWake(ctx, a.id))!;
         expect(second.id).not.toBe(first.id);
-        expect((await ctx.fns.agent.triggers({ id: a.id })).map((t: any) => t.id)).toEqual([second.id]);
+        expect((await ctx.fns.ui.automationRows({ id: a.id })).map((t: any) => t.id)).toEqual([second.id]);
     });
 
     test("unpark resumes an agent whose messages went unanswered", async () => {
@@ -151,7 +151,7 @@ describe("usage-limit parking", () => {
 
         const reloaded = await ctx.fns.session.load({ id: a.id });
         expect(reloaded.scratchpad.parked).toBeUndefined();
-        expect((await ctx.fns.agent.triggers({ id: a.id, status: "all" }))[0]).toMatchObject({ id: wake.id, status: "completed" });
+        expect((await ctx.fns.ui.automationRows({ id: a.id, status: "all" }))[0]).toMatchObject({ id: wake.id, status: "completed" });
         const row = (await ctx.fns.procs.db.select({ sql: "SELECT next_run_at FROM agents WHERE id = ?", params: [a.id] }))[0];
         expect(row.next_run_at).not.toBeNull();
     });

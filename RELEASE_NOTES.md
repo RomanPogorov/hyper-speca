@@ -41,15 +41,21 @@ what to do (if anything). Internal refactors without visible effect do not need 
   silent.
 - `wake`, `cron` and `watch` return a `hint` with how to list and cancel; the bash background result points
   to `jobs.list`. A command with no output now says "Output: none".
-- `agent.wakeIn` / `agent.wakeUpWhen` are deprecated in favour of `agent.wake` / `agent.watch`.
 
-### Background with a grace period, background eval, jobs.wait
+### One way for each thing (jobs)
+- Background work and wake-ups have one call each: `bash/eval({ background })`, `agent.wake`, `agent.cron`,
+  `agent.watch`, `agent.attach`; one list `jobs.list`, one stop `jobs.cancel({ id })` for every kind; output
+  through `jobs.logs`. The guide is `docs/jobs.md` (agent-triggers, wake-ups and trigger-results docs merged in).
 - `bash({ command, timeout, background: { afterMs: 30000, wake: "…" } })` waits up to `afterMs`: a command done
   by then returns its normal result; one still running keeps running as a job and wakes the agent with `wake`.
   `timeout` kills, `afterMs` only stops blocking.
 - `eval({ code, background: true | { afterMs, wake } })` runs long in-process code as a job with the same
   completion message (runs inside the server: a restart reports it lost).
-- `jobs.wait({ id, timeoutMs })` returns a job once it ends, within a bounded time.
+- Removed duplicates: `agent.wakeAt`, `agent.wakeIn`, `agent.wakeUpWhen`, `agent.cancelWake`,
+  `agent.listSchedules`, `agent.triggers`, `agent.cancelTrigger`, `agent.cancelAllTriggers`, `agent.detach`,
+  `agent.attachments` (→ `jobs.list` / `jobs.cancel`); `remote.start/logs/stop/jobs` (→ `bash({ host,
+  background })`); the `sleep` timer runner (→ `agent.wake`); bash `notify` (→ `background.wake`); `jobs.wait`;
+  the routes `POST /agent/:id/wake` and `/agent/:id/schedules` (the Automation panel uses `/agent/:id/triggers`).
 
 ### Jobs: background commands, timers and triggers in one table
 - `bash({ background: true })` / `jobs.start` run a command in tmux (locally or over SSH) that survives a Hyper
