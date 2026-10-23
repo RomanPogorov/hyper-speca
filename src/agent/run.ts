@@ -18,6 +18,49 @@
  */
 export default async function (
     ctx: Context,
+    session: Session | null,
+    opts: {
+        /** Live agent whose transcript and turn state are updated. */
+        agent: types.agent.Agent;
+        /** User input to append unless already persisted by ingestion. */
+        userText: string;
+        /** Skip appending input for worker-claimed messages. @default false */
+        userMessageAlreadyAppended?: boolean;
+    },
+) {
+    // A run is one TURN for every interface: it opens with turn_start and closes
+    // with turn_end and its outcome, so a UI shows "working / done / failed /
+    // stopped" from the transcript itself instead of guessing it from gaps.
+    const { agent } = opts;
+    const started = Date.now();
+    // The message that starts the turn comes first, then the turn opens.
+    if (!opts.userMessageAlreadyAppended) {
+        await ctx.fns.session.appendUserMessage({ id: agent.id, text: opts.userText });
+        await ctx.fns.session.syncAgentState({ agent });
+        opts = { ...opts, userMessageAlreadyAppended: true };
+    }
+    // Marking a turn never breaks one: a context without an event log (a stub,
+    // an observer) simply runs unmarked.
+    const mark = (event: Record<string, unknown>) => Promise.resolve()
+        .then(() => ctx.fns.session.appendEvent({ id: agent.id, event })).catch(() => undefined);
+    await mark({ type: 'turn_start', at: started });
+    let status: 'completed' | 'failed' | 'cancelled' | 'waiting' = 'completed';
+    let error: string | null = null;
+    try {
+        return await runTurn(ctx, session, opts);
+    } catch (e: any) {
+        const aborted = agent.abortController?.signal?.aborted || e?.name === 'AbortError' || /abort/i.test(String(e?.message ?? ''));
+        status = aborted ? 'cancelled' : e?.failure?.kind === 'usage_limit' ? 'waiting' : 'failed';
+        error = aborted ? null : String(e?.failure?.message ?? e?.message ?? e);
+        throw e;
+    } finally {
+        delete agent.scratchpad?.mobileStream;
+        await mark({ type: 'turn_end', status, error, at: Date.now(), ms: Date.now() - started });
+    }
+}
+
+async function runTurn(
+    ctx: Context,
     _session: Session | null,
     opts: {
         /** Live agent whose transcript and turn state are updated. */
@@ -137,6 +180,7 @@ export default async function (
         const onRunAbort = () => sampling.abort(ac.signal.reason ?? "run_aborted");
         ac.signal.addEventListener("abort", onRunAbort, { once: true });
         let streamed: any;
+        let streamTimer: ReturnType<typeof setTimeout> | null = null;
         try {
             streamed = await ctx.fns.llm.stream({
                 agent,
@@ -145,6 +189,13 @@ export default async function (
                     if (event?.type !== "text_delta" || typeof event.delta !== "string") return;
                     mobileStream.text += event.delta;
                     mobileStream.revision++;
+                    // Live text for any interface: a signal on agent:<id>:stream
+                    // (no payload — the text stays in memory and is read with
+                    // agent.liveText), at most every 120 ms with a trailing one.
+                    if (!streamTimer) streamTimer = setTimeout(() => {
+                        streamTimer = null;
+                        try { ctx.fns.procs.events.emit({ topic: `agent:${agent.id}:stream`, event: { type: 'stream', revision: mobileStream.revision } }); } catch {}
+                    }, 120);
                 },
             });
         } catch (error: any) {
@@ -159,6 +210,7 @@ export default async function (
             }
             throw error;
         } finally {
+            if (streamTimer) { clearTimeout(streamTimer); streamTimer = null; }
             if (agent.samplingAbortController === sampling) agent.samplingAbortController = null;
             ac.signal.removeEventListener("abort", onRunAbort);
         }

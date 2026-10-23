@@ -36,7 +36,7 @@ describe("agent goal loop", () => {
         expect(agent.goal.status).toBe("limit_reached");
         expect(agent.goal.checks.at(-1).status).toBe("limit_reached");
         const events = await ctx.fns.session.getEvents({ id: agent.id });
-        expect(events.at(-1)).toMatchObject({ type: "goal_check", status: "limit_reached" });
+        expect(events.filter((e: any) => !String(e.type).startsWith("turn_")).at(-1)).toMatchObject({ type: "goal_check", status: "limit_reached" });
     });
     test("does not check goal before executing tool calls", async () => {
         const ctx: any = await mkTestCtx();
