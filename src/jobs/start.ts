@@ -19,6 +19,7 @@
  * @param opts.prompt Extra instruction appended to the completion message, e.g. "if green, deploy".
  * @param opts.agentId Agent to notify; defaults to the calling agent.
  * @param opts.originToolCallId Tool call that started the job, for the UI.
+ * @param opts.quietMs Do not probe or report the job for this long (capped at its deadline): the caller waits for it in the foreground with jobs.wait. @default 0 @minimum 0
  */
 export default async function (
     ctx: Context,
@@ -48,6 +49,8 @@ export default async function (
         agentId?: string;
         /** Tool call that started the job, for the UI. */
         originToolCallId?: string;
+        /** Do not probe or report the job for this long (capped at its deadline): the caller waits for it in the foreground with jobs.wait. @default 0 @minimum 0 */
+        quietMs?: number;
     },
 ): Promise<types.jobs.Job> {
     const agentId = opts.agentId ?? session?.agentId ?? (session as any)?.agent?.id;
@@ -84,7 +87,7 @@ export default async function (
         const backend = !at.host && (await ctx.fns.settings.getString({ module: "jobs", scopeType: "global", key: "backend", fallback: "tmux" })) === "hyperd" ? "hyperd" : "tmux";
         spec = { title, command, host: at.host, cwd: at.path, env: opts.env ?? {}, secrets: opts.secrets ?? {}, backend };
         deadline = now + Math.max(1, Math.min(2_592_000, opts.timeout ?? 86_400)) * 1000;
-        nextAt = now + 1000;
+        nextAt = now + Math.max(1000, Math.min(Math.floor(opts.quietMs ?? 0), deadline - now));
     }
 
     await ctx.fns.procs.db.run({

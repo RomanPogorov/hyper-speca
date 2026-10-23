@@ -43,6 +43,14 @@ what to do (if anything). Internal refactors without visible effect do not need 
   to `jobs.list`. A command with no output now says "Output: none".
 - `agent.wakeIn` / `agent.wakeUpWhen` are deprecated in favour of `agent.wake` / `agent.watch`.
 
+### Background with a grace period, background eval, jobs.wait
+- `bash({ command, timeout, background: { afterMs: 30000, wake: "…" } })` waits up to `afterMs`: a command done
+  by then returns its normal result; one still running keeps running as a job and wakes the agent with `wake`.
+  `timeout` kills, `afterMs` only stops blocking.
+- `eval({ code, background: true | { afterMs, wake } })` runs long in-process code as a job with the same
+  completion message (runs inside the server: a restart reports it lost).
+- `jobs.wait({ id, timeoutMs })` returns a job once it ends, within a bounded time.
+
 ### Jobs: background commands, timers and triggers in one table
 - `bash({ background: true })` / `jobs.start` run a command in tmux (locally or over SSH) that survives a Hyper
   restart; the agent gets one message with exit code, duration and output tail when it ends. `jobs.list`,

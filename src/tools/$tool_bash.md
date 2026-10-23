@@ -36,11 +36,19 @@ parameters:
       type: integer
       description: "Seconds before the command is killed. No timeout by default; with background: true the default is 24 h."
     background:
-      type: boolean
-      description: "Run as a background job: returns a job id immediately, the command runs in tmux (local or host) and survives a Hyper restart; when it exits you receive one message with exit code, duration and output tail. Do not wait or poll for it — end your turn."
+      type: [boolean, object]
+      description: "Run as a background job: true returns a job id immediately, the command runs in tmux (local or host) and survives a Hyper restart; when it exits you receive one message with exit code, duration and output tail. Do not wait or poll for it — end your turn. An object { afterMs, wake } first waits afterMs: a command done by then returns its normal result; one still running keeps running as the job and you get `wake` with its completion."
+      properties:
+        afterMs:
+          type: integer
+          description: "Wait this long (ms, up to 600000) before returning the job id; 0 = background at once. Not a timeout: the command is never killed at afterMs."
+        wake:
+          type: string
+          description: "Instruction included in the completion message, e.g. \"Tests finished. Inspect failures and fix them.\""
+      additionalProperties: false
     notify:
       type: string
-      description: "With background: true — an instruction included in the completion message, e.g. \"if tests pass, commit\"."
+      description: "With background: true — an instruction included in the completion message, e.g. \"if tests pass, commit\" (same as background.wake)."
   required: [command]
   additionalProperties: false
 ---
@@ -63,5 +71,6 @@ await ctx.fns.tools.bash({
 The model-visible command contains only `$TOKEN` and the secret reference. The resolved value exists in the child process environment and occurrences in captured stdout/stderr are replaced with `[REDACTED]`. `secrets` overrides variables with the same name from `env`.
 
 This prevents accidental transcript leakage, not malicious exfiltration: the invoked program can still read the environment and send it over the network. Do not use `set -x`, place secret values in command arguments, or print the environment.
+- `background: { afterMs: 30000, wake: "…" }` waits up to `afterMs` first: a command that finishes in time returns its normal result (no job message); one still running returns `Still running after 30s — moved to background job <id>`, keeps running (same process) and reports with `wake` when it ends. `timeout` still kills the process; `afterMs` only stops blocking you. `afterMs: 0` = `background: true`.
 - `background: true` turns the call into a job (`ctx.fns.jobs.start`): the result is the job id, the command runs detached in tmux on the target host with output in `~/.hyper-jobs/<id>/out.log`. When it exits the agent gets one `job` message (exit code, duration, last ~4 KB of output, an optional `notify` instruction); jobs ending within ~2 s of each other arrive in one turn. A job you cancel with `jobs.cancel` does not wake you. If the process disappears (machine reboot) the job is reported as `lost`.
 - The marker form takes no options — use the `bash` tool call for cwd / env / secrets / timeout.

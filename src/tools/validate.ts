@@ -27,7 +27,9 @@ function check(value: any, schema: any, path: string, errors: string[]): void {
     const types: string[] = Array.isArray(schema?.type) ? schema.type : schema?.type ? [schema.type] : [];
     const at = path ? `"${path}" ` : "";
 
-    if (types.includes("object")) {
+    // a union such as ["boolean", "object"] checks the object rules only for an object value
+    const objectValue = value != null && typeof value === "object" && !Array.isArray(value);
+    if (types.includes("object") && (objectValue || types.length === 1)) {
         if (value == null || typeof value !== "object" || Array.isArray(value)) {
             errors.push(`${at || "arguments "}must be an object, got ${describe(value)}`);
             return;
@@ -54,7 +56,7 @@ function check(value: any, schema: any, path: string, errors: string[]): void {
         return;
     }
 
-    if (types.includes("array")) {
+    if (types.includes("array") && (Array.isArray(value) || types.length === 1)) {
         if (!Array.isArray(value)) {
             errors.push(`${at}must be an array, got ${describe(value)}`);
             return;

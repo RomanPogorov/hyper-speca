@@ -10,6 +10,9 @@
  * @param opts.startedAt When the call started (ms).
  * @param opts.secrets Secret references of the call, for masking output.
  * @param opts.kill Stops the process; used by jobs.cancel.
+ * @param opts.title Short label; defaults to the first line of the command.
+ * @param opts.prompt Instruction appended to the completion message.
+ * @param opts.timeoutMs Deadline counted from startedAt; past it the job is stopped and reported as timeout. @default 86400000
  */
 export default async function (
     ctx: Context,
@@ -25,6 +28,12 @@ export default async function (
         secrets?: Record<string, string>;
         /** Stops the process; used by jobs.cancel. */
         kill: () => void;
+        /** Short label; defaults to the first line of the command. */
+        title?: string;
+        /** Instruction appended to the completion message. */
+        prompt?: string;
+        /** Deadline counted from startedAt; past it the job is stopped and reported as timeout. @default 86400000 */
+        timeoutMs?: number;
     },
 ): Promise<{ id: string; dir: string }> {
     const now = Date.now();
@@ -34,12 +43,12 @@ export default async function (
     const { mkdirSync } = await import("node:fs");
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const owner = (await ctx.fns.procs.db.select({ sql: "SELECT created_by FROM agents WHERE id = ?", params: [opts.agentId] }) as any[])[0];
-    const title = (opts.command.split("\n").find((l) => l.trim()) ?? opts.command).trim().slice(0, 120);
+    const title = (opts.title ?? opts.command.split("\n").find((l) => l.trim()) ?? opts.command).trim().slice(0, 120);
     const spec = { title, command: opts.command, host: null, secrets: opts.secrets ?? {}, detached: true };
     await ctx.fns.procs.db.run({
-        sql: `INSERT INTO jobs (id, kind, runner, spec, state, status, owner_id, created_by, agent_id, execution_id, next_at, created_at, started_at, deadline_at, updated_at)
-              VALUES (?, 'exec', 'attached', ?::jsonb, '{}'::jsonb, 'running', ?, 'ui', ?, ?, ?, ?, ?, ?, ?)`,
-        params: [id, JSON.stringify(spec), owner?.created_by ?? null, opts.agentId, id, now + 1000, now, opts.startedAt, now + 86_400_000, now],
+        sql: `INSERT INTO jobs (id, kind, runner, spec, state, status, owner_id, created_by, agent_id, prompt, execution_id, next_at, created_at, started_at, deadline_at, updated_at)
+              VALUES (?, 'exec', 'attached', ?::jsonb, '{}'::jsonb, 'running', ?, 'ui', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        params: [id, JSON.stringify(spec), owner?.created_by ?? null, opts.agentId, opts.prompt ?? null, id, now + 1000, now, opts.startedAt, opts.startedAt + Math.max(1000, opts.timeoutMs ?? 86_400_000), now],
     });
     (((ctx.state as any).attachedJobs ??= new Map()) as Map<string, { kill: () => void }>).set(id, { kill: opts.kill });
     ctx.fns.events.refreshAgentMeta({ agentId: opts.agentId, section: "automation", reason: "job-adopt" });

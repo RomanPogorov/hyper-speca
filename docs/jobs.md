@@ -6,7 +6,7 @@ the agent gets one message in the same conversation and a turn is queued. Nothin
 | kind | runner | made by | ends with |
 |---|---|---|---|
 | `exec` | `bash` | `bash({ background: true })`, `jobs.start` | a completion message: exit code, duration, output tail |
-| `exec` | `attached` | the "to background" button on a running bash call (`tools.detachRun` → `jobs.adopt`) | same |
+| `exec` | `attached` | the "to background" button on a running bash call (`tools.detachRun` → `jobs.adopt`), `eval({ background })` | same |
 | `exec` | `sleep` | `jobs.start({ runner: "sleep", ms })` | a message after `ms` |
 | `schedule` | `at` | `agent.wake` | the prompt, once |
 | `schedule` | `cron` | `agent.cron` | the prompt on every occurrence |
@@ -17,9 +17,13 @@ the agent gets one message in the same conversation and a turn is queued. Nothin
 
 ```ts
 await ctx.fns.tools.bash({ command: "bun test", background: true, notify: "if green, deploy" }) // the tool
+// wait up to 30 s; done by then → the normal result, still running → a job id, and a message with `wake` later
+await ctx.fns.tools.bash({ command: "bun test", timeout: 600, background: { afterMs: 30_000, wake: "Tests finished. Inspect failures and fix them." } })
+await ctx.fns.tools.eval({ code: "await crawl(); console.log('done')", background: true })   // long eval as a job
 const job = await ctx.fns.jobs.start({ command: "make build", host: "builder", timeout: 3600, secrets: { TOKEN: "secret://ci/token" } })
 await ctx.fns.jobs.list({})                  // what is running; { status: "finished" | "all" }
 await ctx.fns.jobs.get({ id: job.id })       // status, exit code, output tail
+await ctx.fns.jobs.wait({ id: job.id, timeoutMs: 30_000 })   // { done, job }; a job that ends here sends no message
 await ctx.fns.jobs.logs({ id: job.id, offset: 0, limit: 4000 })   // output, secrets masked
 await ctx.fns.jobs.cancel({ id: job.id })    // silent: no completion message
 ```
@@ -32,6 +36,13 @@ await ctx.fns.jobs.cancel({ id: job.id })    // silent: no completion message
   never see them, and secret values are replaced with `[REDACTED]` in everything the agent reads.
 - A job that runs past `timeout` (default 24 h) is stopped and reported as `timeout`; a vanished session is
   `lost`. Unreachable SSH hosts are retried with backoff until the deadline.
+- `background: { afterMs, wake }`: the job starts at once and the call blocks up to `afterMs`. A command that ends
+  in time returns its normal foreground result and sends no message; one still running returns its job id and
+  keeps running (the same process). `timeout` kills the process; `afterMs` only stops blocking. `afterMs: 0` is
+  `background: true`. `wake` is the instruction in the completion message (`notify` is the older name).
+- `eval({ code, background })` runs the code inside the server as an `attached` job: printed output goes to the job
+  log, exit 0 or 1 (threw). It is a promise, not a process: cancel and timeout stop reporting it but cannot
+  interrupt it, and a server restart reports it lost.
 - "To background" moves a running local bash call into a job: the tool call returns at once, the process keeps
   running inside the server (so a server restart reports it as lost).
 - Several jobs that end within 2 s reach the agent in one turn.

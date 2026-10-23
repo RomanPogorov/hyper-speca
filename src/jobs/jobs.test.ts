@@ -114,6 +114,69 @@ describe("jobs", () => {
         expect(j).toMatchObject({ status: "succeeded", prompt: "report" });
     }, 15_000);
 
+    test("background.afterMs: a command done in time returns its normal result and sends no message", async () => {
+        const { ctx, a } = await setup();
+        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "echo quick; exit 2", background: { afterMs: 5000, wake: "never" } }, agent: a });
+        expect(r.isError).toBe(true);
+        expect(r.output).toBe("[exit 2]\nquick");
+        const [j] = await ctx.fns.jobs.list({ agentId: a.id, status: "all" });
+        expect(j).toMatchObject({ status: "failed", result: { exitCode: 2 } });
+        await ctx.fns.jobs.poll({ now: Date.now() + 120_000 });
+        expect(await inbox(ctx, a.id)).toHaveLength(0);
+    }, 15_000);
+
+    test("background.afterMs: a command still running moves to the background and wakes with its instruction", async () => {
+        const { ctx, a } = await setup();
+        const started = Date.now();
+        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "echo one; sleep 1.5; echo two", timeout: 60, background: { afterMs: 400, wake: "Tests finished. Inspect failures." } }, agent: a });
+        expect(Date.now() - started).toBeLessThan(1400);
+        expect(r.output).toContain("Still running after 0s — moved to background job");
+        const id = /job (j[0-9a-f]+)/.exec(r.output)![1];
+        expect(await until(ctx, id)).toMatchObject({ status: "succeeded" });
+        const msg = (await inbox(ctx, a.id))[0].content;
+        expect(msg).toContain("one\ntwo");
+        expect(msg).toContain("Your instruction for this moment: Tests finished. Inspect failures.");
+    }, 15_000);
+
+    test("background option is validated: unknown keys inside it are refused", async () => {
+        const { ctx, a } = await setup();
+        const r = await ctx.fns.tools.call({ name: "bash", args: { command: "true", background: { after: 5 } }, agent: a });
+        expect(r.isError).toBe(true);
+        expect(r.output).toContain('unknown option "background.after"');
+    });
+
+    test("jobs.wait returns a finished job at once and done:false for one still running", async () => {
+        const { ctx, a } = await setup();
+        const quick = await ctx.fns.jobs.start({ agentId: a.id, command: "echo hi" });
+        expect(await ctx.fns.jobs.wait({ id: quick.id, timeoutMs: 5000 })).toMatchObject({ done: true, job: { status: "succeeded" } });
+        const slow = await ctx.fns.jobs.start({ agentId: a.id, command: "sleep 30" });
+        expect(await ctx.fns.jobs.wait({ id: slow.id, timeoutMs: 300 })).toMatchObject({ done: false, job: { status: "running" } });
+        await ctx.fns.jobs.cancel({ id: slow.id });
+    }, 15_000);
+
+    test("eval background: output and the result come back as a job message", async () => {
+        const { ctx, a } = await setup();
+        // mkTestCtx stubs repl.eval; this one sleeps, prints or throws as the code says
+        ctx.state.registry.repl.eval = async (_c: any, _s: any, o: { code: string }) => {
+            const ms = Number(/sleep\((\d+)\)/.exec(o.code)?.[1] ?? 0);
+            if (ms) await Bun.sleep(ms);
+            if (o.code.includes("throw")) throw new Error("boom");
+            return o.code.includes("crawled") ? "crawled 3" : "2";
+        };
+        const r = await ctx.fns.tools.call({ name: "eval", args: { code: "await Bun.sleep(300); console.log('crawled', 3)", background: true }, agent: a });
+        expect(String(r.output ?? r)).toContain("Started background job");
+        const id = /job (j[0-9a-f]+)/.exec(String(r.output ?? r))![1];
+        expect(await until(ctx, id)).toMatchObject({ status: "succeeded", runner: "attached" });
+        expect((await inbox(ctx, a.id))[0].content).toContain("crawled 3");
+
+        const quick = await ctx.fns.tools.call({ name: "eval", args: { code: "console.log(1 + 1)", background: { afterMs: 3000 } }, agent: a });
+        expect(String(quick.output ?? quick)).toBe("2");
+
+        const bad = await ctx.fns.tools.call({ name: "eval", args: { code: "await Bun.sleep(200); throw new Error('boom')", background: true }, agent: a });
+        const badId = /job (j[0-9a-f]+)/.exec(String(bad.output ?? bad))![1];
+        expect(await until(ctx, badId)).toMatchObject({ status: "failed", result: { exitCode: 1 } });
+    }, 20_000);
+
     test("a command that cannot start fails the call instead of messaging later", async () => {
         const { ctx, a } = await setup();
         await expect(ctx.fns.jobs.start({ agentId: a.id, command: "true", host: "no-such-host-xyz" })).rejects.toThrow("could not start");

@@ -9,7 +9,7 @@
  * @param opts.env Additional environment variables.
  * @param opts.secrets Secret references exposed as environment variables; values are redacted from output.
  * @param opts.timeout Timeout in seconds.
- * @param opts.background Start as a background job (jobs.start) and return its id at once; the agent is messaged when it ends.
+ * @param opts.background Run as a background job (jobs.start) and return its id at once; the agent is messaged when it ends. An object { afterMs, wake } waits afterMs first: a command done by then returns its normal result, one still running keeps running as the job.
  * @param opts.notify With background — instruction included in the completion message.
  */
 export default async function (
@@ -28,19 +28,28 @@ export default async function (
         secrets?: Record<string, string>;
         /** Timeout in seconds. */
         timeout?: number;
-        /** Start as a background job (jobs.start) and return its id at once; the agent is messaged when it ends. @default false */
-        background?: boolean;
+        /** Run as a background job (jobs.start) and return its id at once; the agent is messaged when it ends. An object { afterMs, wake } waits afterMs first: a command done by then returns its normal result, one still running keeps running as the job. @default false */
+        background?: boolean | { afterMs?: number; wake?: string };
         /** With background — instruction included in the completion message. */
         notify?: string;
     },
 ): Promise<{ output: string; isError: boolean }> {
     if (opts.background) {
+        const bg = typeof opts.background === "object" ? opts.background : {};
+        const afterMs = Math.max(0, Math.min(600_000, Math.floor(bg.afterMs ?? 0)));
+        // timeout kills the process; afterMs only decides how long this call blocks. The job is started at once
+        // either way, so a command still running at afterMs simply goes on — the same process, not a restart.
         const job = await ctx.fns.jobs.start({
             runner: "bash", command: opts.command, host: opts.host, cwd: opts.cwd, env: opts.env, secrets: opts.secrets,
-            timeout: opts.timeout, prompt: opts.notify, originToolCallId: (ctx as any).toolRun?.toolCallId,
+            timeout: opts.timeout, prompt: bg.wake ?? opts.notify, originToolCallId: (ctx as any).toolRun?.toolCallId, quietMs: afterMs,
         });
+        if (afterMs > 0) {
+            const waited = await ctx.fns.jobs.wait({ id: job.id, timeoutMs: afterMs });
+            if (waited.done) return await foreground(ctx, waited.job);
+        }
+        const after = afterMs > 0 ? `Still running after ${Math.round(afterMs / 1000)}s — moved to background job ${job.id}` : `Started background job ${job.id}`;
         return {
-            output: `Started background job ${job.id}${job.host ? ` on ${job.host}` : ""}: ${job.title}\nYou will get a message when it ends — do not wait or poll; end your turn or do other work. Output: ctx.fns.jobs.logs({ id: "${job.id}" }); stop: ctx.fns.jobs.cancel({ id: "${job.id}" }); everything running: ctx.fns.jobs.list({}).`,
+            output: `${after}${job.host ? ` on ${job.host}` : ""}: ${job.title}\nYou will get a message when it ends — do not wait or poll; end your turn or do other work. Output: ctx.fns.jobs.logs({ id: "${job.id}" }); stop: ctx.fns.jobs.cancel({ id: "${job.id}" }); everything running: ctx.fns.jobs.list({}).`,
             isError: false,
         };
     }
@@ -73,6 +82,15 @@ export default async function (
         result.output = result.output.replaceAll(value, "[REDACTED]");
     }
     return result;
+}
+
+// A background call that ended within afterMs answers like a foreground one: output, or [exit N] + output.
+async function foreground(ctx: Context, job: types.jobs.Job): Promise<{ output: string; isError: boolean }> {
+    const log = await ctx.fns.jobs.logs({ id: job.id, offset: -REMOTE_MAX, limit: REMOTE_MAX }).catch(() => ({ text: job.result?.tail ?? "", bytes: 0 }));
+    const text = (log.bytes > REMOTE_MAX ? `… [${log.bytes - REMOTE_MAX} bytes cut — ctx.fns.jobs.logs({ id: "${job.id}", offset: 0 })] …\n` : "") + log.text.trimEnd();
+    if (job.status === "succeeded") return { output: text || "(no output)", isError: false };
+    const head = job.status === "timeout" ? `[timed out — the command was killed]` : job.status === "failed" ? `[exit ${job.result?.exitCode}]` : `[${job.status}]`;
+    return { output: text ? `${head}\n${text}` : head, isError: true };
 }
 
 // Remote branch: same output contract as agent.executeBash, transported by remote.exec.
