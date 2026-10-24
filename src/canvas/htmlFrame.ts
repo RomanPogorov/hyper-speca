@@ -16,7 +16,8 @@ const CSP = [
     "connect-src 'none'",
     "form-action 'none'",
     "base-uri 'none'",
-    "frame-ancestors 'self'",
+    // local pages may frame it too: a page shown through a local proxy (Speca's browser tab) frames it from there
+    "frame-ancestors 'self' http://localhost:* http://*.localhost:* http://127.0.0.1:*",
     "sandbox allow-scripts allow-forms allow-modals allow-pointer-lock allow-downloads allow-popups allow-popups-to-escape-sandbox",
 ].join("; ");
 

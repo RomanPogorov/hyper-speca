@@ -50,7 +50,7 @@ export async function snapshotPage(c: Ctx): Promise<Response> {
   const body = render(src, got!.state.files, undefined, { tids: false, depth: 0, seen: new Set() }).replace(/<script\b(?![^>]*type="application\/json")[\s\S]*?<\/script>/gi, "");
   return new Response(`<!doctype html><html><head><meta charset="utf-8"><style>${BOARD_CSS}html,body{overflow:hidden}</style></head><body>${body}</body></html>`, {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store",
-      "content-security-policy": `sandbox; default-src 'none'; style-src 'unsafe-inline' ${c.url.origin}/canvas-libs/; font-src data:; img-src data: blob:; frame-ancestors 'self'` },
+      "content-security-policy": `sandbox; default-src 'none'; style-src 'unsafe-inline' ${c.url.origin}/canvas-libs/; font-src data:; img-src data: blob:; frame-ancestors 'self' http://localhost:* http://*.localhost:* http://127.0.0.1:*` },
   });
 }
 

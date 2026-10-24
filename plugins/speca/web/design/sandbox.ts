@@ -14,7 +14,7 @@ export function sandboxCsp(nonce: string, origin: string): string {
     `sandbox ${SANDBOX_FLAGS}`, "default-src 'none'", "base-uri 'none'",
     `script-src 'nonce-${nonce}' 'unsafe-eval' 'wasm-unsafe-eval' blob: ${libs}`, "script-src-attr 'unsafe-inline'",
     `style-src 'unsafe-inline' ${libs}`, `font-src data: ${libs}`, `img-src data: blob: ${libs}`, "media-src data: blob:", "worker-src blob:",
-    "connect-src 'none'", "form-action 'none'", "frame-ancestors 'self'",
+    "connect-src 'none'", "form-action 'none'", "frame-ancestors 'self' http://localhost:* http://*.localhost:* http://127.0.0.1:*",
   ].join("; ");
 }
 

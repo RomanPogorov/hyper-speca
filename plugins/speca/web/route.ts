@@ -30,11 +30,14 @@ export function redirect(c: Ctx, to: string): Response {
 
 export const noContent = () => new Response(null, { status: 204 });
 
-export function answer(v: unknown): Response {
+export function answer(v: unknown, origin?: string): Response {
   if (v instanceof Response) return v;
   if (v == null) return noContent();
   if (isRaw(v) || typeof v === "string") {
-    const body = isRaw(v) ? (v as Raw).html : (v as string);
+    let body = isRaw(v) ? (v as Raw).html : (v as string);
+    // a whole page says where the server itself is: shown through a proxy (Speca's browser tab), the page's frames
+    // load from here — the proxy does not let a page frame its own address (app.js, "frames behind a proxy")
+    if (origin && body.startsWith("<!doctype")) body = body.replace("<head>", `<head><meta name="dh-origin" content="${origin.replace(/"/g, "")}">`);
     return new Response(body, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-dh-css": cssVersions() } });
   }
   return Response.json(v, { headers: { "cache-control": "no-store" } });
@@ -66,7 +69,7 @@ export async function makeCtx(h: any, session: any, req: Request, params: Record
 export function route(fn: (c: Ctx) => unknown) {
   return async function (h: any, session: any, opts: { req: Request; params?: Record<string, string> }): Promise<Response> {
     const c = await makeCtx(h, session, opts.req, opts.params ?? {});
-    try { return answer(await fn(c)); }
+    try { return answer(await fn(c), c.url.origin); }
     catch (e: any) {
       const msg = String(e?.message ?? e);
       h.fns?.procs?.log?.warn?.({ event: "speca.route", msg: `${opts.req.method} ${c.url.pathname}: ${msg}` });

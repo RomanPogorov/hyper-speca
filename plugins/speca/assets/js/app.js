@@ -8,6 +8,20 @@
   const csrf = () => { try { return JSON.parse(document.body.getAttribute("hx-headers") || "{}")["x-csrf"] || ""; } catch { return ""; } };
   const post = (url, data = {}) => fetch(url, { method: "POST", headers: { "x-csrf": csrf(), "hx-request": "true", "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(data) });
 
+  // ── frames behind a proxy: Speca's browser tab shows this page from another address and lets nothing but Speca
+  // frame that address, so prototypes, artboards and other tabs' frames came out blank. There the frames load from
+  // the server's own address (the dh-origin meta), which a local page may frame. Elsewhere nothing changes.
+  {
+    const home = document.querySelector('meta[name="dh-origin"]')?.content;
+    if (home && home !== location.origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(home)) {
+      const fix = (f, a) => { const v = f.getAttribute(a); if (v && v.startsWith("/") && !v.startsWith("//")) f.setAttribute(a, home + v); };
+      const fixAll = (n) => { if (n.nodeType !== 1) return; for (const f of n.tagName === "IFRAME" ? [n] : n.querySelectorAll("iframe")) { fix(f, "src"); fix(f, "data-src"); } };
+      new MutationObserver((ms) => { for (const m of ms) { if (m.type === "attributes") { if (m.target.tagName === "IFRAME") fix(m.target, m.attributeName); } else m.addedNodes.forEach(fixAll); } })
+        .observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["src", "data-src"] });
+      fixAll(document.documentElement);
+    }
+  }
+
   // ── theme (Basecoat uses .dark; the prototype tokens use data-theme) ──
   const darkMQ = matchMedia("(prefers-color-scheme: dark)");
   function syncDark() {
@@ -1235,7 +1249,9 @@
 // beneath keeping a strip in view. The stack is in the address (?sub=a,b); Esc or the strip closes the top one.
 (() => {
   "use strict";
-  const msg = (m) => parent.postMessage({ dhSub: m }, location.origin);
+  // the holder is this page's origin, or — behind a proxy (Speca's browser tab) — the proxy's address; only the frames
+  // it holds are listened to (e.source below), so any target is safe for these UI hints
+  const msg = (m) => parent.postMessage({ dhSub: m }, "*");
   if (document.body.classList.contains("pane")) {
     // inside a drawer: opening a subagent, going back and Esc are the page's that holds the stack
     document.addEventListener("click", (e) => {
@@ -1278,8 +1294,9 @@
     e.preventDefault(); e.stopPropagation(); open(a.dataset.sub);
   }, true);
   addEventListener("message", (e) => {
-    if (e.origin !== location.origin || !e.data?.dhSub) return;
+    if ((e.origin !== location.origin && e.origin !== document.querySelector('meta[name="dh-origin"]')?.content) || !e.data?.dhSub) return;
     const m = e.data.dhSub, from = stack.findIndex((d) => d.querySelector("iframe")?.contentWindow === e.source);
+    if (from < 0 && e.origin !== location.origin) return;
     if (m.open) open(m.open, from);
     if (m.close) { while (stack.length > Math.max(0, from)) drop(); sync(); }
   });
