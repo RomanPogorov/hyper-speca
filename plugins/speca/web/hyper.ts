@@ -129,7 +129,7 @@ type HEvent = { idx: number; type: string; payload: string; ts: string; actor: s
 export async function loadEvents(ctx: Ctx, s: HSession, opts: { after?: number; before?: number } = {}): Promise<EventRow[]> {
   const rows = await sel<HEvent>(ctx, "SELECT idx, type, payload, ts, actor FROM events WHERE agent_id = ? ORDER BY idx", [s.id]);
   const busy = s.status === "running" || s.status === "parked";
-  const out = toLog(s, rows, busy ? live(ctx, s.id) : null);
+  const out = toLog(s, rows, busy ? live(ctx, s.id) : null, await delegated(ctx, s.id));
   return out.filter((e) => (opts.after == null || e.idx > opts.after) && (opts.before == null || e.idx < opts.before));
 }
 
@@ -142,8 +142,20 @@ function live(ctx: Ctx, id: string): { draft: string | null; tools: Array<{ id: 
   return { draft: draft && draft.trim() ? draft : null, tools };
 }
 
-export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> | null): EventRow[] {
+/** The chat's subagents (agent.delegate's children): when each was started and on which model — the log puts a
+ *  live card where the agent started it, as Speca does. */
+type Delegated = { id: string; name: string; model: string; at: number };
+async function delegated(ctx: Ctx, id: string): Promise<Delegated[]> {
+  const rows = await sel<{ id: string; title: string | null; model: string | null; scratchpad: any; created_at: any }>(ctx,
+    "SELECT id, title, model, scratchpad, created_at FROM agents WHERE parent_id = ? ORDER BY created_at", [id]);
+  return rows.map((r) => ({ r, d: safeJson(typeof r.scratchpad === "string" ? r.scratchpad : JSON.stringify(r.scratchpad ?? {})).delegation }))
+    .filter((x) => x.d).map(({ r, d }) => ({ id: String(r.id), name: String(r.title || d.title || r.id), model: String(r.model ?? ""), at: Number(d.createdAt ?? r.created_at) }));
+}
+
+export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> | null, subs: Delegated[] = []): EventRow[] {
   const out: EventRow[] = [];
+  const subIds = new Set(subs.map((x) => x.id));
+  const pending = [...subs];
   const ev = (idx: number, type: string, data: Record<string, any>, ts: number) => out.push({ session_id: s.id, idx, type, family: null, data, ts: new Date(ts) });
   let open = false, marked = false, started = 0;
   let tokens = { in: 0, cached: 0, out: 0 };
@@ -155,6 +167,11 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
     const r = rows[i]!;
     const p = safeJson(r.payload);
     const ts = Number(r.ts);
+    // a subagent started before this row: its card goes here (inside the turn that started it)
+    while (pending.length && pending[0]!.at <= ts) {
+      const d = pending.shift()!;
+      ev(r.idx, "subagent_started", { subId: d.id, name: d.name, modelLabel: prettyModel(d.model) }, d.at);
+    }
     switch (r.type) {
       case "turn_start": {
         if (open) end(r.idx, ts, "completed");
@@ -176,7 +193,7 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
       case "assistant": {
         if (!open && !marked) begin(r.idx, ts);
         const u = p.usage ?? {};
-        tokens.in += Number(u.input ?? u.inputTokens ?? 0); tokens.cached += Number(u.cacheRead ?? u.cachedInputTokens ?? 0); tokens.out += Number(u.output ?? u.outputTokens ?? 0);
+        tokens.in += Number(u.prompt_tokens ?? u.input ?? u.inputTokens ?? 0); tokens.cached += Number(u.cache_read_tokens ?? u.cacheRead ?? u.cachedInputTokens ?? 0); tokens.out += Number(u.completion_tokens ?? u.output ?? u.outputTokens ?? 0);
         ev(r.idx, "assistant_message", { text: p.text ?? "", toolCalls: [] }, ts);
         // legacy: the answer closes the turn when the person speaks next
         if (!marked) {
@@ -199,6 +216,12 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
         break;
       }
       case "team_update": {
+        // a subagent with a card: its steps show on the card, its report comes once as "the subagent's report"
+        if (p.memberId && subIds.has(String(p.memberId))) {
+          if (p.event === "plan.completed") ev(r.idx, "subagent_result", { name: subs.find((x) => x.id === String(p.memberId))?.name ?? "", text: String(p.summary ?? "") }, ts);
+          else if (p.event === "blocked") ev(r.idx, "notice", { text: String(p.summary ?? p.event), sub: p.memberId }, ts);
+          break;
+        }
         if (p.event && p.memberId) ev(r.idx, "notice", { text: `${p.taskTitle ? `${p.taskTitle}: ` : ""}${p.summary ?? p.event}`, sub: p.memberId }, ts);
         break;
       }
