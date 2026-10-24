@@ -45,7 +45,7 @@ export async function briefCard(c: Ctx): Promise<Raw> {
   if (a?.lastAgent) {
     const [row] = await safe(() => c.h.fns.procs.db.select({ sql: `SELECT a.run_state,
       (SELECT payload::jsonb->>'text' FROM events e WHERE e.agent_id = a.id AND e.type = 'assistant' AND coalesce(payload::jsonb->>'text','') <> '' ORDER BY idx DESC LIMIT 1) AS text,
-      (SELECT created_at FROM events e WHERE e.agent_id = a.id AND e.type = 'assistant' ORDER BY idx DESC LIMIT 1) AS at FROM agents a WHERE a.id = ?`, params: [a.lastAgent] }));
+      (SELECT ts FROM events e WHERE e.agent_id = a.id AND e.type = 'assistant' ORDER BY idx DESC LIMIT 1) AS at FROM agents a WHERE a.id = ?`, params: [a.lastAgent] }));
     text = String(row?.text ?? "");
     at = row?.at ? new Date(Number(row.at) || row.at) : null;
     busy = row?.run_state === "running";

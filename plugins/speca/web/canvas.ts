@@ -21,7 +21,7 @@ export const SPECA_KINDS = new Set<string>(["speca.doc", "speca.table", "speca.c
 const kindsOf = (c: Ctx): Record<string, { icon?: string; render: Function }> => (c.h.state as any).canvas?.kinds ?? {};
 /** Speca's own icons for the kinds it has (its kit and Hyper's html page); Hyper's other kinds keep their Phosphor icon. */
 const KIND_ICONS: Record<string, string> = { "speca.doc": "fileText", "speca.table": "table", "speca.chart": "activity", "speca.metrics": "gauge", "speca.list": "listChecks", "speca.board": "layout", "speca.compare": "grid", "speca.design": "penTool", "speca.changes": "fileDiff", "speca.files": "folderTree", "speca.file": "file", "speca.subagents": "bot", "speca.timeline": "clock", "excalidraw.board": "penTool", "browser.live": "globe", "speca.terminal": "terminal", html: "appWindow" };
-const tabIcon = (c: Ctx, kind: string) => ic(KIND_ICONS[kind] ?? `ph:${kindsOf(c)[kind]?.icon ?? "app-window"}`, "ic-sm tico");
+export const tabIcon = (c: Ctx, kind: string) => ic(KIND_ICONS[kind] ?? `ph:${kindsOf(c)[kind]?.icon ?? "app-window"}`, "ic-sm tico");
 
 /** The chat a tab belongs to (the person's own), for the tab's own actions (/speca/canvas/:tab/…). */
 export async function chatOfTab(c: Ctx, tabId: number): Promise<HSession> {

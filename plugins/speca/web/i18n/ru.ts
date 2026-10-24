@@ -1639,4 +1639,6 @@ export const ru: Record<keyof typeof en, Entry> = {
   "dy.tasks": "Задачи",
   "dy.sent": "Передано координатору",
   "dy.taskDone": "Сделано",
+  "sv.remove": "Убрать",
+  "sv.removed": "Убрано из сохранённого",
 };

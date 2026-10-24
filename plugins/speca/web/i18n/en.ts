@@ -1637,4 +1637,6 @@ export const en = {
   "dy.tasks": "Tasks",
   "dy.sent": "Sent to the coordinator",
   "dy.taskDone": "Done",
+  "sv.remove": "Remove",
+  "sv.removed": "Removed from Saved",
 } satisfies Record<string, Entry>;
