@@ -13,10 +13,12 @@ import { lineDiff, hunks, stats, canvasText } from "./diff.ts";
 export type Tab = { id: number; agentId: string; kind: string; title: string; args: Record<string, any>; state: Record<string, any>; active: boolean; createdAt: number; updatedAt: number; closedAt: number | null; version?: number; draftEdits?: number };
 
 /** Kinds Speca draws itself (in the page, with Speca's styles); the rest are Hyper's and go into a frame. */
-export const SPECA_KINDS = new Set<string>();
+export const SPECA_KINDS = new Set<string>(["speca.doc", "speca.table", "speca.chart", "speca.metrics", "speca.list", "speca.board", "speca.compare"]);
 
 const kindsOf = (c: Ctx): Record<string, { icon?: string; render: Function }> => (c.h.state as any).canvas?.kinds ?? {};
-const tabIcon = (c: Ctx, kind: string) => ic(`ph:${kindsOf(c)[kind]?.icon ?? "app-window"}`, "ic-sm tico");
+/** Speca's own icons for the kinds it has (its kit and Hyper's html page); Hyper's other kinds keep their Phosphor icon. */
+const KIND_ICONS: Record<string, string> = { "speca.doc": "fileText", "speca.table": "table", "speca.chart": "activity", "speca.metrics": "gauge", "speca.list": "listChecks", "speca.board": "layout", "speca.compare": "grid", html: "appWindow" };
+const tabIcon = (c: Ctx, kind: string) => ic(KIND_ICONS[kind] ?? `ph:${kindsOf(c)[kind]?.icon ?? "app-window"}`, "ic-sm tico");
 
 /** The chat a tab belongs to (the person's own), for the tab's own actions (/speca/canvas/:tab/…). */
 export async function chatOfTab(c: Ctx, tabId: number): Promise<HSession> {
@@ -55,7 +57,7 @@ export async function canvasHtml(c: Ctx, s: HSession): Promise<Raw> {
 
 type Version = { v: number; name: string | null; author: string; createdAt: number; changes: Array<{ note: string | null; author: string; at: number }> };
 type Edit = { n: number; author: string; note: string | null; at: number };
-export type BodyOpts = { v?: number; compare?: boolean; at?: number; readonly?: boolean };
+export type BodyOpts = { v?: number; compare?: boolean; at?: number; readonly?: boolean; edit?: boolean };
 
 /** Kinds whose content is an address, not something written: no draft, no versions (a page's live state is not
  *  its content: an html tab keeps versions of its html). */
@@ -73,7 +75,7 @@ async function drawn(c: Ctx, s: HSession, tab: Tab, held: Tab, q: string): Promi
   const kind = kindsOf(c)[tab.kind];
   if (!kind) return html`<div class="empty-canvas small">${ic("puzzle")}<p>${c.t("canvas.unknownKind", { kind: tab.kind })}</p></div>`;
   if (SPECA_KINDS.has(tab.kind)) {
-    try { return raw(String(await kind.render(c.h, { agentId: s.id, item: held }))); }
+    try { return raw(String(await kind.render(c.h, { agentId: s.id, item: held, ui: c }))); }
     catch (e: any) { return html`<div class="errcard">${ic("alert", "ic-sm")}${String(e?.message ?? e)}</div>`; }
   }
   // the frame is keyed by the tab's last change, so a new state reloads it and an unchanged one stays put
@@ -104,6 +106,9 @@ export async function tabBody(c: Ctx, s: HSession, tab: Tab, opts: BodyOpts = {}
       : shown && prevOf(shown.v) ? { a: prevOf(shown.v)!.v, b: shown.v as number | null, from: `v${prevOf(shown.v)!.v}`, to: `v${shown.v}` } : null;
     if (pair) content = diffView(tab.kind, (await bodyOf(pair.a)).args, (await bodyOf(pair.b)).args, t, { tabId: tab.id, from: pair.from, to: pair.to, readonly: !!opts.readonly });
   }
+  if (opts.edit && tab.kind === "speca.doc" && !opts.readonly) {
+    content = html`<form class="doc-edit" hx-post="/speca/canvas/${tab.id}/edit" hx-swap="none"><textarea name="markdown" class="input doc-ta" rows="24" aria-label="${t("canvas.edit")}">${String(tab.args.markdown ?? "")}</textarea><div class="sec-acts"><button class="btn" data-variant="ghost" data-size="sm" type="button" hx-get="/speca/canvas/${tab.id}/body" hx-target="#cbody" hx-swap="innerHTML">${t("common.cancel")}</button><button class="btn" data-size="sm">${t("common.save")}</button></div></form>`;
+  }
   const noteOf = (n: string | null) => (!n ? null : /^restored v\d+$/.test(n) ? t("canvas.restoredFrom", { v: n.slice(10) }) : n);
   const who = (a: string) => (a === "agent" ? t("canvas.byAgent") : a === `user:${c.user.id}` || a === "user" ? t("canvas.byYou") : a.replace(/^user:/, ""));
   const when = (ms: number) => rel(new Date(ms), t.locale);
@@ -133,12 +138,13 @@ export async function tabBody(c: Ctx, s: HSession, tab: Tab, opts: BodyOpts = {}
   const banner = atEdit ? html`<div class="ver-banner">${ic("clock", "ic-sm")}<span class="grow">${t("canvas.atEdit", { note: noteOf(atEdit.note) ?? `#${atEdit.n}`, time: clock(atEdit.at, c.user.tz ?? "UTC") })}</span><button class="btn" data-variant="ghost" data-size="sm" hx-get="${body()}" hx-target="#cbody" hx-swap="innerHTML">${t("canvas.toDraft")}</button>${opts.readonly || atEdit.n === lastEdit?.n ? "" : html`<button class="btn" data-size="sm" hx-post="/speca/canvas/${tab.id}/revert" hx-vals='${JSON.stringify({ n: atEdit.n })}' hx-swap="none">${t("canvas.revertHere")}</button>`}</div>`
     : cur && (cur.v !== last?.v || draft) ? html`<div class="ver-banner">${ic("clock", "ic-sm")}<span class="grow">${t("canvas.viewingVersion", { v: cur.v, n: vs.length })}</span><button class="btn" data-variant="ghost" data-size="sm" hx-get="${body()}" hx-target="#cbody" hx-swap="innerHTML">${draft ? t("canvas.toDraft") : t("canvas.toCurrent")}</button>${opts.readonly ? "" : html`<button class="btn" data-size="sm" hx-post="/speca/canvas/${tab.id}/restore" hx-vals='${JSON.stringify({ v: cur.v })}' hx-swap="none">${t("canvas.restoreToDraft")}</button>`}</div>` : "";
   // comments pinned to the content (the live view of the draft only)
-  const commentable = !opts.compare && !cur && !atEdit;
+  const commentable = !opts.compare && !opts.edit && !cur && !atEdit;
   const open = commentable ? (await c.h.fns.canvas.comments({ itemId: tab.id })).length : 0;
   const cmBtn = commentable ? html`<button type="button" class="btn cmt-btn" data-variant="ghost" data-size="icon-sm" data-act="cmt-toggle" aria-pressed="false" aria-label="${t("cm.title")}" data-tooltip="${t("cm.title")} · C" data-side="bottom">${ic("msg", "ic-sm")}<span class="cmt-n"${open ? "" : raw(" hidden")}>${open}</span></button>` : "";
   const cmAttrs = commentable ? raw(` data-cmt-tab="${tab.id}" data-cmt-ses="${s.id}"${opts.readonly ? ` data-cmt-ro="1"` : ""} data-cmt-l="${commentStrings(t)}"`) : "";
   const kindName = tab.kind;
-  return html`<div class="doc"><div class="doc-h"><span class="path"><span class="kind-ic" role="img" tabindex="0" aria-label="${kindName}" data-tooltip="${kindName}" data-side="bottom">${tabIcon(c, tab.kind)}</span>${tab.title}</span><span class="grow"></span>${cmBtn}${verBar}</div>${banner}${cmpBar}<div class="tab-content"${cmAttrs}>${content}${commentable ? html`<i class="cmt-live" hidden data-cmt-ui data-live-topic="comments:${s.id}"></i>` : ""}</div></div>${drawer}`;
+  const editBtn = tab.kind === "speca.doc" && !opts.readonly && !cur && !atEdit && !opts.compare && !opts.edit ? html`<button class="btn doc-edit-btn" data-variant="ghost" data-size="icon-sm" hx-get="${body("?edit=1")}" hx-target="#cbody" hx-swap="innerHTML" aria-label="${t("canvas.edit")}" data-tooltip="${t("canvas.edit")}" data-side="bottom">${ic("pencil", "ic-sm")}</button>` : "";
+  return html`<div class="doc"><div class="doc-h"><span class="path"><span class="kind-ic" role="img" tabindex="0" aria-label="${kindName}" data-tooltip="${kindName}" data-side="bottom">${tabIcon(c, tab.kind)}</span>${tab.title}</span><span class="grow"></span>${cmBtn}${verBar}${editBtn}</div>${banner}${cmpBar}<div class="tab-content"${cmAttrs}>${content}${commentable ? html`<i class="cmt-live" hidden data-cmt-ui data-live-topic="comments:${s.id}"></i>` : ""}</div></div>${drawer}`;
 }
 
 /** The journal: the draft's edits (newest first: look at a moment, go back to it) and the saved versions with the

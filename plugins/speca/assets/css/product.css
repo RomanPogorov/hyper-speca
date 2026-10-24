@@ -1900,3 +1900,9 @@ html.app-mac.app-plain body::before { content: ""; position: fixed; inset: 0 0 a
 .tab-content > .hyper-frame { border: 0; border-radius: 0; background: var(--bg); }
 .tab-content.cmt-on iframe.hyper-frame { pointer-events: none; }
 .tab-bare > .hyper-frame { flex: 1; height: auto; min-height: 0; border: 0; border-radius: 0; background: var(--bg); }
+
+/* a kit table: the layout utility .grid must not make it a css grid */
+table.grid { display: table; }
+/* a comparison cell: its buttons at the bottom, a document inside without a second frame */
+.cmp-doc { flex: 1; }
+.cmp-doc > .canvas-doc { border: 0; padding: 0; background: none; }
