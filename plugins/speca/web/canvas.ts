@@ -11,6 +11,7 @@ import { clock, rel } from "./fmt.ts";
 import { lineDiff, hunks, stats, canvasText } from "./diff.ts";
 import { compareHtml } from "./design/kind.ts";
 import { codeDir } from "./code/files.ts";
+import { builtFrom, building, sourceOf, DESIGN_KINDS, type Link } from "./proto.ts";
 
 export type Tab = { id: number; agentId: string; kind: string; title: string; args: Record<string, any>; state: Record<string, any>; active: boolean; createdAt: number; updatedAt: number; closedAt: number | null; version?: number; draftEdits?: number };
 
@@ -159,9 +160,29 @@ export async function tabBody(c: Ctx, s: HSession, tab: Tab, opts: BodyOpts = {}
   const open = commentable ? (await c.h.fns.canvas.comments({ itemId: tab.id })).length : 0;
   const cmBtn = commentable ? html`<button type="button" class="btn cmt-btn" data-variant="ghost" data-size="icon-sm" data-act="cmt-toggle" aria-pressed="false" aria-label="${t("cm.title")}" data-tooltip="${t("cm.title")} · C" data-side="bottom">${ic("msg", "ic-sm")}<span class="cmt-n"${open ? "" : raw(" hidden")}>${open}</span></button>` : "";
   const cmAttrs = commentable ? raw(` data-cmt-tab="${tab.id}" data-cmt-ses="${s.id}"${opts.readonly ? ` data-cmt-ro="1"` : ""} data-cmt-l="${commentStrings(t)}"`) : "";
+  // a design and its prototype (an html tab built from it): build / open / update from the design, the way back and
+  // "update" from the prototype. The agent builds; the buttons ask it as the person.
+  const live = !opts.compare && !opts.edit && !cur && !atEdit;
+  const pbtn = (o: { label: string; icon: string; post: string; tip?: string; behind?: boolean; back?: boolean }) => html`<button type="button" class="btn proto-btn${o.behind ? " behind" : ""}" data-variant="ghost" data-size="sm" hx-post="${o.post}" hx-swap="none" hx-disabled-elt="this"${o.back ? raw(` hx-vals='{"dir":"back"}'`) : ""}${o.tip ? raw(` data-tooltip="${o.tip.replace(/"/g, "&quot;")}" data-side="bottom"`) : ""}>${ic(o.icon, "ic-sm")}${o.behind ? html`<i class="proto-dot"></i>` : ""}${o.label}</button>`;
+  // while the agent does a sync the person asked for: one line saying so, not the link's buttons
+  const busy = (dir: string) => html`<span class="proto-busy"><i class="spin"></i>${t(`proto.busy.${dir}` as never)}</span>`;
+  let protoBar: Raw | "" = "";
+  if (live && DESIGN_KINDS.has(tab.kind)) {
+    const built = (await builtFrom(c.h, tab.id))[0];
+    const dir = built ? built.dir : (await building(c.h, tab.id)) ? "build" : null;
+    const openBtn = (b: Link) => pbtn({ label: t("proto.open"), icon: "play", post: `/speca/canvas/${b.built.id}/activate`, tip: b.built.title });
+    protoBar = dir
+      ? html`<span class="proto-bar">${built ? openBtn(built) : ""}${busy(dir)}</span>`
+      : built
+      ? html`<span class="proto-bar">${openBtn(built)}${built.behind && !opts.readonly ? pbtn({ label: t("proto.update"), icon: "refresh", post: `/speca/canvas/${tab.id}/prototype`, tip: t("proto.behind"), behind: true }) : ""}${built.ahead && !opts.readonly ? pbtn({ label: t("proto.fromProto"), icon: "merge", post: `/speca/canvas/${tab.id}/prototype`, tip: t("proto.ahead"), behind: true, back: true }) : ""}</span>`
+      : opts.readonly ? "" : html`<span class="proto-bar">${pbtn({ label: t("proto.build"), icon: "play", post: `/speca/canvas/${tab.id}/prototype` })}</span>`;
+  } else if (live) {
+    const src = await sourceOf(c.h, tab);
+    if (src) protoBar = html`<span class="proto-bar">${pbtn({ label: t("proto.from", { title: src.source.title }), icon: "penTool", post: `/speca/canvas/${src.source.id}/activate`, tip: t("proto.fromTip") })}${src.dir ? busy(src.dir) : html`${src.behind && !opts.readonly ? pbtn({ label: t("proto.update"), icon: "refresh", post: `/speca/canvas/${tab.id}/prototype`, tip: t("proto.behind"), behind: true }) : ""}${src.ahead && !opts.readonly ? pbtn({ label: t("proto.toDesign"), icon: "merge", post: `/speca/canvas/${tab.id}/prototype`, tip: t("proto.ahead"), behind: true, back: true }) : ""}`}</span>`;
+  }
   const kindName = tab.kind;
   const editBtn = tab.kind === "speca.doc" && !opts.readonly && !cur && !atEdit && !opts.compare && !opts.edit ? html`<button class="btn doc-edit-btn" data-variant="ghost" data-size="icon-sm" hx-get="${body("?edit=1")}" hx-target="#cbody" hx-swap="innerHTML" aria-label="${t("canvas.edit")}" data-tooltip="${t("canvas.edit")}" data-side="bottom">${ic("pencil", "ic-sm")}</button>` : "";
-  return html`<div class="doc"><div class="doc-h"><span class="path"><span class="kind-ic" role="img" tabindex="0" aria-label="${kindName}" data-tooltip="${kindName}" data-side="bottom">${tabIcon(c, tab.kind)}</span>${tab.title}</span><span class="grow"></span>${cmBtn}${verBar}${editBtn}</div>${banner}${cmpBar}<div class="tab-content${design ? " tab-design" : ""}"${cmAttrs}>${content}${commentable ? html`<i class="cmt-live" hidden data-cmt-ui data-live-topic="comments:${s.id}"></i>` : ""}</div></div>${drawer}`;
+  return html`<div class="doc"><div class="doc-h"><span class="path"><span class="kind-ic" role="img" tabindex="0" aria-label="${kindName}" data-tooltip="${kindName}" data-side="bottom">${tabIcon(c, tab.kind)}</span><span class="doc-ttl">${tab.title}</span></span><span class="grow"></span>${protoBar}${cmBtn}${verBar}${editBtn}</div>${banner}${cmpBar}<div class="tab-content${design ? " tab-design" : ""}"${cmAttrs}>${content}${commentable ? html`<i class="cmt-live" hidden data-cmt-ui data-live-topic="comments:${s.id}"></i>` : ""}</div></div>${drawer}`;
 }
 
 /** The journal: the draft's edits (newest first: look at a moment, go back to it) and the saved versions with the

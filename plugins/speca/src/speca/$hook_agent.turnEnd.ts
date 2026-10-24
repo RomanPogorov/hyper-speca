@@ -2,6 +2,7 @@
 // "N files changed" card (a turn_changes event), opened in the Changes tab.
 import { snapshotEnd, type Snap } from "../../web/code/changes.ts";
 import { recordTurnEnd, topicOf } from "../../web/timeline.ts";
+import { endSyncs } from "../../web/proto.ts";
 
 /** Compare the workspace folder with its snapshot from the turn's start; record and show what changed.
  * @param opts.agentId Agent whose turn ended.
@@ -13,6 +14,8 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     /** The turn's id. */
     turnId: string;
 }): Promise<void> {
+    // a prototype sync the person asked for is over with the answer: the tabs show the link's own state again
+    void endSyncs(ctx as any, opts.agentId).then(() => ctx.fns.canvas.notify({ agentId: opts.agentId })).catch(() => {});
     // the timeline's entry for this turn, once the turn is closed in the log (turn_end is written right after this hook)
     setTimeout(() => {
         void recordTurnEnd(ctx as any, "local", opts.agentId)

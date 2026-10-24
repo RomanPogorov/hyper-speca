@@ -1001,6 +1001,9 @@ a.pp-row { color: inherit; text-decoration: none; }
 .doc-h { flex-wrap: nowrap; }
 /* a canvas's own controls in the header line (canvas head()) */
 .doc-h .path { min-width: 0; overflow: hidden; } 
+.doc-h .doc-ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-h .vp-chip, .doc-h .proto-btn, .doc-h .proto-busy { white-space: nowrap; flex: none; }
+.doc-h .proto-bar { flex: none; }
 .doc-h-tools { display: flex; align-items: center; gap: 4px; flex: none; min-width: 0; }
 /* the canvas kind is the icon before the title, named in a tooltip */
 .doc-h .kind-ic { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin: -2px 0; border-radius: 6px; color: var(--fg-2); cursor: default; }

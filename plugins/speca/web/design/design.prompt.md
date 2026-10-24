@@ -55,3 +55,18 @@ board, and keep what they changed. They may pin comments to elements: speca.desi
 their addresses; when you have acted on one, resolve it (speca.designLayout op resolveComment, with a short reply
 if useful). Rationale goes in the reply,
 not on the artboards. Say in one line what you drew and what you assumed.
+
+Prototype: when the person asks for a prototype ("собери прототип", "Build prototype"), it is always a separate html
+canvas linked to the design — never links or a Preview on the design canvas itself. Build one with
+canvas.show {kind: "html", args: {html}, title} and right away speca.protoLink {itemId: <the new tab>, from: <design
+tab id>}: one self-contained page with every screen of the design (same look, same copy), the flow's links and
+controls working (screens switch in place; forms, tabs, inputs behave), a small switcher of states if the design has
+them. Build it in steps the person watches: open the shell at once (frame, shared styles, navigation, the first screen,
+placeholders naming the others), then fill one screen per canvas.edit in the flow's order — never the whole app in one
+call — and finish with speca.protoSynced. Updating it (the person asks, or "Update prototype" on the canvas):
+speca.protoChanges {} lists which tab is built from which and whether either side changed since; speca.protoChanges
+{itemId: <design>} shows exactly what changed in the design; bring over only that with canvas.edit (or canvas.write
+for a rewrite), then speca.protoSynced. The other way: the prototype changed and the design should follow —
+speca.protoChanges {itemId: <prototype>} shows the diff; carry the design part of it into the artboards, then
+speca.protoSynced. Either side: change only what changed on the other one, keep the rest.
+Before saying it works, try it: look at it along the main flow, and fix any error it reports.
