@@ -22,7 +22,21 @@ export default async function (ctx: Context, _session: Session | null, opts: {
         const state = Object.keys(shown).length ? ` — state ${JSON.stringify(shown).slice(0, 1000)}` : "";
         const live = typeof kind?.live === "function" ? kind.live(item) : kind?.live;
         const mark = live === true ? "live, " : live === false ? `snapshot from ${new Date(item.updatedAt).toISOString().slice(0, 16).replace("T", " ")} UTC, ` : "";
-        return `- [${item.id}] "${item.title}": ${mark}${what}${item.active ? " (active)" : ""}${state}`;
+        return `- [${item.id}] "${item.title}": ${mark}${what}${item.active ? " (active)" : ""}${await draftNote(item)}${state}`;
+    };
+    // Where the tab's draft stands: who changed it last and what was undone — so after the person edits, undoes or
+    // goes back, the agent re-reads the tab instead of overwriting their change from memory.
+    const draftNote = async (item: types.canvas.Item) => {
+        if (["view", "url", "file"].includes(item.kind)) return "";
+        const d = await ctx.fns.canvas.draft({ itemId: item.id }).catch(() => null);
+        if (!d || (!d.edits.length && !d.redo.length)) return "";
+        const last = d.edits[d.edits.length - 1];
+        const by = (a: string) => (a === "agent" ? "you" : "the person");
+        const parts = [`v${item.version}`];
+        if (last) parts.push(`draft of ${d.edits.length} edit${d.edits.length > 1 ? "s" : ""}, last "${last.note ?? "edit"}" by ${by(last.author)}`);
+        if (d.redo.length) parts.push(`${d.redo.length} edit${d.redo.length > 1 ? "s" : ""} undone`);
+        const reread = (last && last.author !== "agent") || d.redo.length ? " — re-read it before changing it" : "";
+        return ` [${parts.join("; ")}${reread}]`;
     };
     const ordered = [...items.filter(i => i.active), ...items.filter(i => !i.active)];
     return `## Canvas\n\nThe canvas beside the chat is ${view.open ? "open" : "closed"}; tabs:\n` + (await Promise.all(ordered.map(line))).join("\n");
