@@ -145,6 +145,9 @@
       },
       "humanizer": {
         "path": "plugins/humanizer"
+      },
+      "excalidraw": {
+        "path": "plugins/excalidraw"
       }
     }
   }

@@ -19,7 +19,7 @@ export const SPECA_KINDS = new Set<string>(["speca.doc", "speca.table", "speca.c
 
 const kindsOf = (c: Ctx): Record<string, { icon?: string; render: Function }> => (c.h.state as any).canvas?.kinds ?? {};
 /** Speca's own icons for the kinds it has (its kit and Hyper's html page); Hyper's other kinds keep their Phosphor icon. */
-const KIND_ICONS: Record<string, string> = { "speca.doc": "fileText", "speca.table": "table", "speca.chart": "activity", "speca.metrics": "gauge", "speca.list": "listChecks", "speca.board": "layout", "speca.compare": "grid", "speca.design": "penTool", "speca.changes": "fileDiff", "speca.files": "folderTree", "speca.file": "file", "speca.subagents": "bot", "speca.timeline": "clock", html: "appWindow" };
+const KIND_ICONS: Record<string, string> = { "speca.doc": "fileText", "speca.table": "table", "speca.chart": "activity", "speca.metrics": "gauge", "speca.list": "listChecks", "speca.board": "layout", "speca.compare": "grid", "speca.design": "penTool", "speca.changes": "fileDiff", "speca.files": "folderTree", "speca.file": "file", "speca.subagents": "bot", "speca.timeline": "clock", "excalidraw.board": "penTool", "browser.live": "globe", html: "appWindow" };
 const tabIcon = (c: Ctx, kind: string) => ic(KIND_ICONS[kind] ?? `ph:${kindsOf(c)[kind]?.icon ?? "app-window"}`, "ic-sm tico");
 
 /** The chat a tab belongs to (the person's own), for the tab's own actions (/speca/canvas/:tab/…). */
@@ -50,6 +50,10 @@ export async function canvasHtml(c: Ctx, s: HSession): Promise<Raw> {
       <div role="group">${code ? html`<div role="menuitem" hx-post="/speca/s/${s.id}/files/open" hx-swap="none">${ic("folderTree")}${t("pfiles.tab")}</div><div role="menuitem" hx-post="/speca/s/${s.id}/changes/open" hx-swap="none">${ic("fileDiff")}${t("chg.tab")}</div>` : ""}
         <div role="menuitem" hx-post="/speca/s/${s.id}/subs/canvas" hx-swap="none">${ic("bot")}${t("subb.title")}</div>
         <div role="menuitem" hx-post="/speca/s/${s.id}/timeline/open" hx-swap="none">${ic("clock")}${t("tl.title")}<span data-shortcut>${t(s.project_id ? "tl.menuProject" : "tl.menuChat")}</span></div></div>
+      <hr role="separator"><div role="group"><div role="heading">${t("canvas.boards")}</div>
+        ${kindsOf(c)["excalidraw.board"] ? html`<div role="menuitem" hx-post="/speca/s/${s.id}/board/open" hx-vals='{"app":"excalidraw"}' hx-swap="none">${ic("penTool")}Excalidraw</div>` : ""}
+        ${kindsOf(c)["browser.live"] ? html`<div role="menuitem" hx-post="/speca/s/${s.id}/board/open" hx-vals='{"app":"tldraw"}' hx-swap="none">${ic("grid")}tldraw</div>
+        <div role="menuitem" hx-post="/speca/s/${s.id}/board/open" hx-vals='{"app":"browser"}' hx-swap="none">${ic("globe")}${t("canvas.browser")}</div>` : ""}</div>
       ${closed.length ? html`<hr role="separator"><div role="group"><div role="heading">${t("canvas.recentlyClosed")}</div>${join(closed.map((p) => html`<div role="menuitem" hx-post="/speca/canvas/${p.id}/reopen" hx-vals='${JSON.stringify({ session: s.id })}' hx-swap="none">${tabIcon(c, p.kind)}${p.title}<span data-shortcut>${p.kind}</span></div>`))}</div>` : ""}
     </div></div></div>`;
   const tabsBtn = tabs.length > 1 ? html`<button class="btn" data-variant="ghost" data-size="icon-sm" data-act="tabs-menu" aria-label="${t("canvas.allTabs")}" data-tooltip="${t("canvas.allTabs")}" data-side="bottom" data-ph="${t("canvas.searchTabs")}" data-none="${t("canvas.noTabsFound")}" data-close="${t("common.close")}" data-qicon="${String(ic("search", "ic-sm"))}" data-xicon="${String(ic("x", "ic-xs"))}">${ic("chevDown")}</button>` : "";
@@ -70,7 +74,7 @@ export type BodyOpts = { v?: number; compare?: boolean; at?: number; readonly?: 
 const versioned = (_c: Ctx, tab: Tab) => !["view", "url", "file", ...BARE_KINDS].includes(tab.kind);
 /** Speca's bare tabs: a live view of something outside the canvas (the project's files, its changes) fills the panel —
  *  no title line, no versions, no comments. */
-const BARE_KINDS = ["speca.changes", "speca.files", "speca.file", "speca.subagents", "speca.timeline"];
+const BARE_KINDS = ["speca.changes", "speca.files", "speca.file", "speca.subagents", "speca.timeline", "excalidraw.board", "browser.live"];
 
 function commentStrings(t: Ctx["t"]): string {
   const keys = ["title", "q", "hint", "ph", "toAgent", "post", "reply", "replyPh", "resolve", "reopen", "showResolved", "remove", "sendNow", "sent", "add", "addHint", "sendAll", "sentAll", "unsent", "clearAll", "clearAsk", "list", "listEmpty", "pick", "selectAll", "unselect", "removeN", "removeAsk", "removedN", "sentMark", "resolvedMark", "page", "justNow", "minAgo", "hAgo", "you", "agent",
