@@ -19,7 +19,9 @@ export type Ctx = {
 };
 
 export function toast(title: string, description = "", category: "success" | "error" | "info" = "success", more: Record<string, unknown> = {}): Response {
-  return new Response(null, { status: 204, headers: { "HX-Trigger": JSON.stringify({ "dh-toast": { title, description, category }, ...more }) } });
+  // a header holds only ASCII: the JSON keeps every other character as a \uXXXX escape (htmx parses it back)
+  const json = JSON.stringify({ "dh-toast": { title, description, category }, ...more }).replace(/[\u007f-\uffff]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  return new Response(null, { status: 204, headers: { "HX-Trigger": json } });
 }
 
 export function redirect(c: Ctx, to: string): Response {
