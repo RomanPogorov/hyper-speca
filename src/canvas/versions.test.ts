@@ -106,3 +106,17 @@ test("comments: pinned, answered, sent together, resolved", async () => {
     const n = await ctx.fns.procs.db.select({ sql: "SELECT count(*)::int AS n FROM canvas_comments WHERE item_id = ?", params: [tab.id] });
     expect(n[0].n).toBe(2);
 });
+
+test("with canvas.pagesInMemory off a static page stays an html tab with a draft", async () => {
+    const ctx: any = await mkTestCtx();
+    const r: any = reqCtx(ctx);
+    const a = await r.fns.agent.start({ model: "mock:echo" });
+    await r.fns.session.save({ agent: a });
+    await ctx.fns.settings.set({ module: "canvas", scopeType: "global", key: "pagesInMemory", value: false });
+    const tab = await ctx.fns.canvas.show({ agentId: a.id, kind: "html", title: "Static", args: { html: "<h1>Hi</h1>" } });
+    expect(tab).toMatchObject({ kind: "html", version: 1 });
+    await ctx.fns.canvas.edit({ itemId: tab.id, edits: [{ old: "Hi", new: "Hello" }], note: "hello" });
+    expect((await ctx.fns.canvas.tab({ itemId: tab.id })).draftEdits).toBe(1);
+    await ctx.fns.settings.set({ module: "canvas", scopeType: "global", key: "pagesInMemory", value: true });
+    expect((await ctx.fns.canvas.show({ agentId: a.id, kind: "html", title: "Memo", args: { html: "<h1>Memo</h1>" } })).kind).toBe("view");
+});

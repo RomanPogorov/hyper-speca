@@ -30,7 +30,9 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     // project's level, or the agent's without a project) and opened as a view tab, /rpc/memory.view?{key}.
     // A page with scripts (an animation, the `hyper.*` page API) or server `load` data stays an html tab: a view
     // shows memory pages without their scripts (rpc.cleanHtml).
-    if (opts.kind === "html" && typeof opts.args?.html === "string" && opts.args.html.trim() && !opts.args.load && !/<script\b|\son[a-z]+\s*=/i.test(opts.args.html)) {
+    // With canvas.pagesInMemory off every html page stays an html tab (draft, versions, comments).
+    const inMemory = opts.kind === "html" && (await ctx.fns.settings.get({ module: "canvas", scopeType: "global", key: "pagesInMemory" }).catch(() => true)) !== false;
+    if (inMemory && typeof opts.args?.html === "string" && opts.args.html.trim() && !opts.args.load && !/<script\b|\son[a-z]+\s*=/i.test(opts.args.html)) {
         const html: string = opts.args.html;
         const title = String(opts.title ?? html.match(/<title>([^<]{1,120})<\/title>/i)?.[1]?.trim() ?? "Page").slice(0, 200);
         const slug = title.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60)
