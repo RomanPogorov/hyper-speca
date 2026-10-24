@@ -39,9 +39,10 @@ export async function chatFor(h: H, agentId: string) {
   const settings = json(u?.settings);
   return {
     chatId: id, sub: id !== agentId,
-    autonomy: (c?.autonomy ?? "full") as "read_only" | "ask" | "drafts" | "full",
+    autonomy: (c?.autonomy ?? settings.defaultAutonomy ?? "full") as "read_only" | "ask" | "drafts" | "full",
     mode: (c?.mode ?? "work") as "work" | "plan",
     askIrreversible: settings.askIrreversible !== false,
+    rules: String(settings.agentRules ?? "").trim(),
     locale: (settings.locale === "en" ? "en" : "ru") as Locale,
   };
 }

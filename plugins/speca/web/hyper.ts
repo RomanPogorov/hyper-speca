@@ -27,12 +27,15 @@ export async function me(ctx: Ctx, session: any): Promise<UserRow> {
   const name: string = u?.name || u?.email || prettyName(userInfo().username);
   const row = (await sel<{ settings: any }>(ctx, "SELECT settings FROM speca_user WHERE user_id = ?", [id]).catch(() => []))[0];
   const settings: UserSettings = typeof row?.settings === "string" ? JSON.parse(row.settings) : row?.settings ?? {};
+  defaults.autonomy = ((settings as any).defaultAutonomy as any) ?? "full";
   return {
-    id, email: u?.email ?? `${userInfo().username}@local`, name, title: null, avatar_url: u?.picture ?? null,
+    id, email: u?.email ?? `${userInfo().username}@local`, name: String((settings as any).name || name), title: ((settings as any).title as string) || null, avatar_url: u?.picture ?? null,
     locale: (settings.locale as any) ?? "ru", tz: (settings.tz as any) ?? appShim.config.org.timezone, status: "active",
     settings, onboarded_at: new Date(), created_at: new Date(),
   };
 }
+/** The person's defaults for a chat that has none of its own yet (Settings → My agent); kept fresh by me(). */
+export const defaults: { autonomy: SessionRow["autonomy"] } = { autonomy: "full" };
 const prettyName = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export async function saveSettings(ctx: Ctx, userId: string, patch: Partial<UserSettings>): Promise<void> {
@@ -71,7 +74,7 @@ function toSession(r: AgentRow, owner: string): SessionRow & { last_idx: number 
     id: r.id, owner_id: owner, project_id: r.project_id, title: r.title || "",
     kind: r.parent_id && r.fork_offset === 0 && sp?.delegation ? "subagent" : r.parent_id ? "chat" : "chat",
     parent_id: r.parent_id, fork_idx: r.parent_id && !sp?.delegation ? (r.fork_offset ?? 0) : null,
-    status, autonomy: (r.autonomy as any) ?? "full", mode: (r.mode as any) ?? "work",
+    status, autonomy: (r.autonomy as any) ?? defaults.autonomy, mode: (r.mode as any) ?? "work",
     model: r.model, toolset: null, label: null, policy_override: null, plan,
     engine_state: {}, error: r.last_error, run_token: null, run_heartbeat_at: null, run_attempts: 0,
     next_run_at: next ? new Date(next) : null, parked_until: next ? new Date(next) : null,

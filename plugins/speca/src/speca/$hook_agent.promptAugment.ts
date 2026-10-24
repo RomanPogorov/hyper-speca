@@ -35,5 +35,6 @@ async function modeNote(ctx: Context, agentId: string): Promise<string> {
         "Autonomy: full access — only irreversible actions (deleting folders, force pushes, dropping tables) wait for the person's confirmation.",
         "To ask the person a question with options (only when you cannot go on sensibly without their choice): ctx.fns.speca.askUser({ questions: [{ question, options?, recommended?, multiple? }] }) — it waits for their answer.",
     ].filter(Boolean);
-    return `<chat_mode>\n${lines.join("\n")}\n</chat_mode>`;
+    const rules = c.rules ? `\n<my_rules>\nThe person's own rules for their agent (Settings → My agent); follow them:\n${c.rules}\n</my_rules>` : "";
+    return `<chat_mode>\n${lines.join("\n")}\n</chat_mode>${rules}`;
 }
