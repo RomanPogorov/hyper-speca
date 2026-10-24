@@ -4,7 +4,7 @@
 // each person picks theirs with the setting ui.provider. The engine — agents,
 // events, tools, canvases, settings — is the same under every interface.
 //
-//   { "title": "Speca", "home": "/speca", "agent": "/speca/s/{id}", "icon": "ph-sparkle" }
+//   { "title": "Studio", "home": "/studio", "agent": "/studio/a/{id}", "icon": "ph-sparkle" }
 /** Collects `$ui_<name>.json` interface declarations into ctx.state.ui.providers. */
 export default async function (ctx: Context, _session: Session | null, opts: {
         /** Entries to load. */ entries: any[] }): Promise<void> {

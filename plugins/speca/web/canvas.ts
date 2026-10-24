@@ -232,6 +232,8 @@ export async function framePage(c: Ctx, sid: string, tabId: number): Promise<Res
   let body = "";
   try { body = kind ? String(await kind.render(c.h, { agentId: sid, item: tab })) : `canvas kind "${tab.kind}" is not loaded`; }
   catch (e: any) { body = `<div class="p-6 text-sm text-faint">${String(e?.message ?? e).replace(/</g, "&lt;")}</div>`; }
+  // an html tab's page comes from Speca's own address for it: the same page, framable through a local proxy too
+  if (tab.kind === "html") body = body.replace(`src="/canvas/${encodeURIComponent(sid)}/item/${tab.id}/frame`, `src="/speca/s/${encodeURIComponent(sid)}/tab/${tab.id}/html`);
   const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   const css = ["/ui/vendor/phosphor.css", "/procs/styles/app.css", "/canvas/canvas.css", "/reladraw/reladraw.css", "/mermaid/mermaid.css"];
   const theme = c.user.settings?.theme === "light" ? "light" : c.user.settings?.theme === "dark" ? "dark" : "";
