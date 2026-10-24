@@ -45,19 +45,22 @@ type AgentRow = {
   id: string; title: string; model: string; parent_id: string | null; fork_offset: number | null; project_id: string | null;
   run_state: string; next_run_at: string | null; last_error: string | null; created_at: string; updated_at: string; archived_at: string | null;
   workspace_dir: string; reasoning_effort: string; scratchpad?: string; created_by: string | null; last_idx: number | null; last_type: string | null;
-  seen_idx: number | null; pinned: boolean | null; autonomy: string | null; mode: string | null;
+  seen_idx: number | null; pinned: boolean | null; autonomy: string | null; mode: string | null; waits?: number | string | null;
 };
 
 const AGENT_COLS = `a.id, a.title, a.model, a.parent_id, a.fork_offset, a.project_id, a.run_state, a.next_run_at, a.last_error,
   a.created_at, a.updated_at, a.archived_at, a.workspace_dir, a.reasoning_effort, a.created_by,
   (SELECT max(idx) FROM events e WHERE e.agent_id = a.id) AS last_idx,
   (SELECT type FROM events e WHERE e.agent_id = a.id AND e.type NOT IN ('tool_busy','team_update','model_changed') ORDER BY idx DESC LIMIT 1) AS last_type,
-  c.seen_idx, c.pinned, c.autonomy, c.mode`;
+  c.seen_idx, c.pinned, c.autonomy, c.mode,
+  (SELECT count(*) FROM speca_approvals p WHERE p.chat_id = a.id AND p.status = 'pending') AS waits`;
 
 function toSession(r: AgentRow, owner: string): SessionRow & { last_idx: number | null } {
   const sp = r.scratchpad ? safeJson(r.scratchpad) : {};
   const next = r.next_run_at ? Number(r.next_run_at) : null;
-  const status: SessionRow["status"] = r.run_state === "running" ? "running"
+  // a card waiting for the person's decision (web/approvals.ts): the chat waits for them
+  const status: SessionRow["status"] = Number(r.waits ?? 0) > 0 && r.run_state === "running" ? "waiting"
+    : r.run_state === "running" ? "running"
     : next && next > Date.now() ? "parked"
     : r.last_type === "error" ? "error" : "idle";
   const plan: PlanItem[] | null = Array.isArray(sp?.plan?.tasks) && sp.plan.tasks.length
@@ -128,7 +131,7 @@ type HEvent = { idx: number; type: string; payload: string; ts: string; actor: s
  *  History written before turns were marked (no turn_start) is grouped by the person's messages. */
 export async function loadEvents(ctx: Ctx, s: HSession, opts: { after?: number; before?: number } = {}): Promise<EventRow[]> {
   const rows = await sel<HEvent>(ctx, "SELECT idx, type, payload, ts, actor FROM events WHERE agent_id = ? ORDER BY idx", [s.id]);
-  const busy = s.status === "running" || s.status === "parked";
+  const busy = s.status === "running" || s.status === "waiting" || s.status === "parked";
   const out = toLog(s, rows, busy ? live(ctx, s.id) : null, await delegated(ctx, s.id));
   return out.filter((e) => (opts.after == null || e.idx > opts.after) && (opts.before == null || e.idx < opts.before));
 }
@@ -230,6 +233,12 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
         ev(r.idx, "turn_changes", p, ts);
         break;
       }
+      case "approval_request": case "approval_decided": case "plan_review": case "question": case "question_answer": {
+        // the person's decisions (web/approvals.ts): the card, then its outcome on the same family id
+        if (!open && !marked) begin(r.idx, ts);
+        out.push({ session_id: s.id, idx: r.idx, type: r.type, family: String(p.approvalId ?? p.questionId ?? ""), data: p, ts: new Date(ts) });
+        break;
+      }
       case "model_changed": {
         ev(r.idx, "system_note", { text: `${prettyModel(String(p.from ?? ""))} → ${prettyModel(String(p.to ?? ""))}` }, ts);
         break;
@@ -241,7 +250,11 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
   if (!last) return out;
   if (now && open) {
     // the agent at work: the tools it runs, then the text it writes
-    for (const t of now.tools) ev(last.idx, "tool_result", { callId: `run-${t.id}`, name: t.name, args: t.subject ? { subject: t.subject } : {}, status: "running", text: t.tail, startedAt: t.startedAt }, t.startedAt);
+    // a call waiting on its card is the card, not a running tool
+    const decided = new Set(out.filter((e) => e.type === "approval_decided" || e.type === "question_answer").map((e) => String(e.data.approvalId ?? e.data.questionId)));
+    const waits = new Set(out.filter((e) => ["approval_request", "plan_review", "question"].includes(e.type) && !decided.has(String(e.data.approvalId ?? e.data.questionId)))
+      .map((e) => (e.type === "approval_request" ? String(e.data.tool) : "eval")));
+    for (const t of now.tools) if (!waits.has(t.name)) ev(last.idx, "tool_result", { callId: `run-${t.id}`, name: t.name, args: t.subject ? { subject: t.subject } : {}, status: "running", text: t.tail, startedAt: t.startedAt }, t.startedAt);
     if (now.draft) ev(last.idx, "assistant_draft", { text: now.draft }, Date.now());
   } else if (open && !marked) end(last.idx, Number(last.ts), "completed");
   return out;

@@ -67,6 +67,23 @@ export default async function (
     callCtx = Object.create(callCtx);
     callCtx.toolRun = run;
 
+    // A UI may hold the call for the person's decision (tools.gate). After
+    // beginRun, so the wait shows as the running call and its stop button —
+    // or the agent's — ends it.
+    if (opts.agent?.id) {
+        let gate: any = null;
+        const stops = [run.controller.signal, (opts.agent as any).abortController?.signal].filter(Boolean) as AbortSignal[];
+        try {
+            gate = await ctx.fns.procs.hooks.first({ name: "tools.gate", opts: { agentId: opts.agent.id, tool: tool.wireName, args, signal: AbortSignal.any(stops) } });
+        } catch (e: any) {
+            gate = { deny: `Error: the call could not be checked — ${e?.message ?? String(e)}. It was not run.` };
+        }
+        if (gate && typeof gate.deny === "string") {
+            ctx.fns.tools.endRun({ id: run.id });
+            return { output: gate.deny, isError: true };
+        }
+    }
+
     // Declaration and implementation are separate files, so the fn is resolved
     // through ctx.fns by its dotted name — which also means a hot-reloaded
     // implementation is picked up without touching the declaration.
