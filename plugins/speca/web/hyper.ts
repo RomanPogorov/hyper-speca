@@ -242,6 +242,11 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
         out.push({ session_id: s.id, idx: r.idx, type: r.type, family: String(p.approvalId ?? p.questionId ?? ""), data: p, ts: new Date(ts) });
         break;
       }
+      case "git": {
+        // the person's git action from the branch chip (web/code/gitOps.ts): one line in the chat
+        ev(r.idx, "git", p, ts);
+        break;
+      }
       case "model_changed": {
         ev(r.idx, "system_note", { text: `${prettyModel(String(p.from ?? ""))} → ${prettyModel(String(p.to ?? ""))}` }, ts);
         break;

@@ -12,5 +12,5 @@ export default route(async (c) => {
   if (!(await getSession(c.h, c.user.id, sid))) return "";
   const [code, dir] = await Promise.all([codeCtx(c, sid), codeDir(c.h, sid)]);
   if (!code || !dir) return "";
-  return branchChip(c.t, code, sid, await gitState(dir.h, dir.dir), false);
+  return branchChip(c.t, code, sid, await gitState(dir.h, dir.dir), true);
 });

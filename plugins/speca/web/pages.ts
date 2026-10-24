@@ -15,7 +15,7 @@ import type { Ctx } from "./route.ts";
 // a chat opens on its last turns; older ones come a page at a time as the person scrolls up
 export const FIRST_TURNS = 15, OLDER_TURNS = 20;
 /** What makes a chat's log more than its empty state. */
-export const shownInLog = (e: { type: string }) => ["turn_start", "user_message", "branch_merged", "side_question", "plan_usage"].includes(e.type);
+export const shownInLog = (e: { type: string }) => ["turn_start", "user_message", "branch_merged", "side_question", "plan_usage", "git", "turn_changes"].includes(e.type);
 
 /** The chat, or a "not found" error the route turns into a toast / page. */
 export async function chatOf(c: Ctx): Promise<HSession> {

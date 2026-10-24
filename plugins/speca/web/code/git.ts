@@ -16,13 +16,19 @@ export async function branchOf(h: Host, dir: string): Promise<string | null> {
 
 /** The whole state, or null when the folder is no git repository. */
 export async function gitState(h: Host, dir: string): Promise<GitState | null> {
-  const st = await run(h, dir, ["status", "--porcelain=v1", "-b", "-z"]);
+  const st = await run(h, dir, ["status", "--porcelain=v1", "-b", "-z", "--untracked-files=all"]);
   if (st === null) return null;
   const [head = "", ...rest] = st.split("\0");
   // "## main...origin/main [ahead 1, behind 2]" or "## HEAD (no branch)"
   const m = /^## (?:No commits yet on )?([^.\s]+)(?:\.\.\.(\S+))?(?: \[(?:ahead (\d+))?(?:, )?(?:behind (\d+))?\])?/.exec(head);
   const detached = /^## HEAD \(no branch\)/.test(head);
-  const changes = rest.filter((l) => l.length > 3).map((l) => ({ path: l.slice(3) }));
+  const changes: GitState["changes"] = [];
+  for (let i = 0; i < rest.length; i++) {
+    const e = rest[i]!; if (e.length < 4) continue;
+    const xy = e.slice(0, 2), path = e.slice(3);
+    if (xy[0] === "R" || xy[0] === "C") { changes.push({ path, status: "R", from: rest[++i] }); continue; }
+    changes.push(xy === "??" ? { path, status: "A", untracked: true } : { path, status: xy.includes("D") ? "D" : xy.includes("A") ? "A" : "M" });
+  }
   const branches = ((await run(h, dir, ["for-each-ref", "--format=%(refname:short)", "refs/heads"])) ?? "").split("\n").filter(Boolean);
   const remote = ((await run(h, dir, ["remote"])) ?? "").split("\n").filter(Boolean)[0] ?? null;
   const url = remote ? ((await run(h, dir, ["remote", "get-url", remote])) ?? "").trim() : "";

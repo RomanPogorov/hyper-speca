@@ -76,7 +76,7 @@ export type UsageRow = { key: string; name?: string | null; pct: number; resetsA
 export type TriggerRow = { id: string; kind: string; prompt: string | null; next_fire_at: Date | string | null; spec: Record<string, any> };
 export type Script = { name: string; command: string };
 export type RunRow = { id: string; name: string; command: string; started_at: Date };
-export type GitState = { branch: string | null; detached: boolean; upstream: string | null; ahead: number; behind: number; changes: Array<{ path: string }>; branches: string[]; remote: boolean; github: boolean };
+export type GitState = { branch: string | null; detached: boolean; upstream: string | null; ahead: number; behind: number; changes: Array<{ path: string; status?: "A" | "M" | "D" | "R"; from?: string; untracked?: boolean }>; branches: string[]; remote: boolean; github: boolean };
 
 /** What Speca's views read from `app`: tools and plugins for naming tool calls, the product's branding, effects. */
 export type App = {
