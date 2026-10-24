@@ -24,4 +24,7 @@ export type Kind = {
     /** The tab body reads its state live (canvas.js posts it in) instead of being re-rendered: a state change
      *  keeps the running page — its scripts, scroll and focus — and only delivers the new state. */
     liveState?: boolean;
+    /** How the draft's undo steps go: by default the agent's edits within one answer are one step; "each" keeps
+     *  every edit its own step (a design canvas: one artboard, one undo). */
+    undo?: "each";
 };

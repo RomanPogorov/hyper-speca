@@ -16,5 +16,5 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     // A live-state kind gets its state posted in, so a state change must not replace its body.
     const live = !!active && !!((ctx.state as any).canvas?.kinds?.[active.kind] as types.canvas.Registered | undefined)?.liveState;
     const body = hash(active ? [active.id, active.kind, active.args, live ? null : active.state] : null);
-    return { panel: hash([items.map(i => [i.id, i.kind, i.title, i.active]), closed.map(i => [i.id, i.title, i.closedAt]), body, active?.state ?? null]), body, activeItemId: active?.id ?? null, tabs: items.map(i => i.id) };
+    return { panel: hash([items.map(i => [i.id, i.kind, i.title, i.active, i.version, i.draftEdits]), closed.map(i => [i.id, i.title, i.closedAt]), body, active?.state ?? null]), body, activeItemId: active?.id ?? null, tabs: items.map(i => i.id) };
 }

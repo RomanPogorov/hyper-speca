@@ -44,6 +44,8 @@ export default async function (
     const mark = (event: Record<string, unknown>) => Promise.resolve()
         .then(() => ctx.fns.session.appendEvent({ id: agent.id, event })).catch(() => undefined);
     await mark({ type: 'turn_start', at: started });
+    // The open turn's id, for what joins one answer's work into one step (canvas edits: one answer, one undo).
+    if (agent.scratchpad) agent.scratchpad.turn = `${agent.id}:${started}`;
     let status: 'completed' | 'failed' | 'cancelled' | 'waiting' = 'completed';
     let error: string | null = null;
     try {
@@ -55,6 +57,7 @@ export default async function (
         throw e;
     } finally {
         delete agent.scratchpad?.mobileStream;
+        delete agent.scratchpad?.turn;
         await mark({ type: 'turn_end', status, error, at: Date.now(), ms: Date.now() - started });
     }
 }

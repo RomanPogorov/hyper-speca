@@ -77,6 +77,8 @@ export default async function (ctx: Context, _session: Session | null, opts: {
                 const pos = (await ctx.fns.procs.db.select({ sql: "SELECT COALESCE(MIN(position), 1) - 1 AS p FROM canvas_items WHERE agent_id = ? AND closed_at IS NULL", params: [agentId] })) as any[];
                 const row: any = await ctx.fns.procs.db.insert({ into: "canvas_items", values: { agent_id: agentId, kind: opts.kind, title, payload, position: Number(pos[0]?.p ?? 0), created_at: now, updated_at: now } });
                 itemId = Number(row.id);
+                // What a tab opens with is its first version (canvas.versions); later writes are its draft.
+                await ctx.fns.procs.db.run({ sql: "INSERT INTO canvas_versions (item_id, v, author, note, body, created_at) VALUES (?, 1, 'agent', NULL, ?::jsonb, ?) ON CONFLICT DO NOTHING", params: [itemId, JSON.stringify({ title, args: prepared.args ?? {}, state: {} }), now] });
             }
             await ctx.fns.procs.db.run({ sql: "UPDATE canvas_state SET open = true, active_item_id = ?, updated_at = ? WHERE agent_id = ?", params: [itemId, now, agentId] });
             return itemId;

@@ -20,4 +20,8 @@ export type Item = {
     updatedAt: number;
     /** When the tab was closed, ms since epoch; null while it is open. */
     closedAt: number | null;
+    /** The tab's last saved version (canvas.commit); 1 until one is saved. */
+    version: number;
+    /** Edits of the draft since that version (canvas.write / canvas.edit, not undone). */
+    draftEdits: number;
 };

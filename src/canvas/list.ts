@@ -18,7 +18,7 @@ export default async function (ctx: Context, _session: Session | null, opts: {
 }): Promise<types.canvas.Item[]> {
     const agentId = String(opts.agentId ?? (await ctx.fns.agent.current({})).id);
     const view = await ctx.fns.canvas.get({ agentId });
-    const cols = "id, kind, title, payload, state, created_at, updated_at, closed_at";
+    const cols = "id, kind, title, payload, state, created_at, updated_at, closed_at, version, draft_edits";
     const rows = (opts.closed
         ? await ctx.fns.procs.db.select({ sql: `SELECT ${cols} FROM canvas_items WHERE agent_id = ? AND closed_at IS NOT NULL ORDER BY closed_at DESC, id DESC LIMIT ?`, params: [agentId, Math.min(200, Math.max(1, Math.floor(Number(opts.limit) || 20)))] })
         : await ctx.fns.procs.db.select({ sql: `SELECT ${cols} FROM canvas_items WHERE agent_id = ? AND closed_at IS NULL ORDER BY position, id`, params: [agentId] })) as any[];
@@ -26,6 +26,7 @@ export default async function (ctx: Context, _session: Session | null, opts: {
         id: Number(r.id), agentId, kind: String(r.kind), title: String(r.title ?? ""),
         args: json(r.payload), state: json(r.state), active: !opts.closed && Number(r.id) === view.activeItemId,
         createdAt: Number(r.created_at), updatedAt: Number(r.updated_at), closedAt: r.closed_at == null ? null : Number(r.closed_at),
+        version: Number(r.version) || 1, draftEdits: Number(r.draft_edits) || 0,
     }));
 }
 
