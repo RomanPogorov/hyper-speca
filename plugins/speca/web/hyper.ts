@@ -169,7 +169,8 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
       case "user": {
         // before turns were marked, a person's message after the agent rested opened one
         if (!open && !marked) begin(r.idx, ts);
-        ev(r.idx, "user_message", { text: p.text ?? "", author: r.actor ?? undefined, attachments: (p.attachments ?? []).map((a: any) => ({ id: a.id, name: a.fileName ?? a.name, mime: a.mimeType ?? a.mime, size: a.size })) }, ts);
+        const { text, context } = splitContext(String(p.text ?? ""));
+        ev(r.idx, "user_message", { text, context, author: r.actor ?? undefined, attachments: (p.attachments ?? []).map((a: any) => ({ id: a.id, name: a.fileName ?? a.name, mime: a.mimeType ?? a.mime, size: a.size })) }, ts);
         break;
       }
       case "assistant": {
@@ -252,4 +253,18 @@ export type CanvasItem = { id: string; kind: string; title: string; version: num
 export async function canvasItems(ctx: Ctx, agentId: string): Promise<CanvasItem[]> {
   return sel<CanvasItem>(ctx, `SELECT id, kind, title, version, state, position, updated_at FROM canvas_items
     WHERE agent_id = ? AND closed_at IS NULL ORDER BY position, created_at`, [agentId]).catch(() => []);
+}
+
+/** A message the interface wrote for the person (a comment, "what changed?") carries what the agent needs in a
+ *  trailing <speca-context> block: the log shows the person's words, and each "- " line of the block as a chip. */
+export function splitContext(raw: string): { text: string; context: Array<{ kind: string; title: string }> } {
+  const m = raw.match(/\n*<speca-context>\n?([\s\S]*?)<\/speca-context>\s*$/);
+  if (!m) return { text: raw, context: [] };
+  const context = m[1]!.split("\n").filter((l) => l.startsWith("- ")).map((l) => ({ kind: "context", title: l.slice(2).replace(/\s*\((?:tab|comment) [^)]*\)$/, "").replace(/^canvas tab /, "").trim() }));
+  return { text: raw.slice(0, m.index).trimEnd(), context };
+}
+
+/** The person's words with what the agent needs about them (see splitContext). */
+export function withContext(text: string, lines: string[], note = ""): string {
+  return `${text}\n\n<speca-context>\n${lines.map((l) => `- ${l}`).join("\n")}${note ? `\n${note}` : ""}\n</speca-context>`;
 }

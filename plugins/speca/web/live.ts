@@ -8,7 +8,7 @@ import type { Ctx } from "./route.ts";
 
 export function liveStream(c: Ctx): Response {
   const want = new Set((c.url.searchParams.get("topics") ?? "").split(",").map((x) => x.trim()).filter(Boolean));
-  const sessions = [...want].filter((t) => t.startsWith("session:") || t.startsWith("canvas:")).map((t) => t.slice(t.indexOf(":") + 1));
+  const sessions = [...want].filter((t) => t.startsWith("session:") || t.startsWith("canvas:") || t.startsWith("comments:")).map((t) => t.slice(t.indexOf(":") + 1));
   const ids = [...new Set(sessions)];
   const enc = new TextEncoder();
   let stop: Array<() => void> = [];
@@ -32,7 +32,7 @@ export function liveStream(c: Ctx): Response {
         handler: (e: any) => {
           const t = String(e?.topic ?? "");
           // canvas.changed is global (no topic) and names its agent
-          if (!t && e?.type === "canvas.changed") { const id = String(e.agentId ?? ""); if (ids.includes(id)) send(`canvas:${id}`); return; }
+          if (!t && e?.type === "canvas.changed") { const id = String(e.agentId ?? ""); if (ids.includes(id)) { send(`canvas:${id}`); send(`comments:${id}`); } return; }
           if (t.startsWith("agent:") && t.endsWith(":stream")) send(`session:${t.slice(6, -7)}`);
           else if (t.startsWith("agent:")) {
             const id = t.slice(6);

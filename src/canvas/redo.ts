@@ -12,7 +12,7 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     agentId?: string;
 }): Promise<{ item: types.canvas.Item; redone: { n: number; note: string | null } | null }> {
     const tab = await ctx.fns.canvas.tab({ itemId: opts.itemId, agentId: opts.agentId });
-    const redone = await ctx.fns.canvas.locked({
+    const redone = (await ctx.fns.canvas.locked({
         agentId: tab.agentId,
         fn: async () => {
             const db = ctx.fns.procs.db;
@@ -22,6 +22,6 @@ export default async function (ctx: Context, _session: Session | null, opts: {
             await ctx.fns.canvas.settle({ itemId: tab.id });
             return { n: Number(next.n), note: next.note ?? null };
         },
-    });
+    })) as { n: number; note: string | null } | null;
     return { item: await ctx.fns.canvas.tab({ itemId: tab.id }), redone };
 }

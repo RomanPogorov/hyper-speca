@@ -97,4 +97,12 @@ test("comments: pinned, answered, sent together, resolved", async () => {
     expect(done).toMatchObject({ status: "resolved", replies: [{ text: "Made it 24px", author: "user" }] });
     expect((await ctx.fns.canvas.comments({ itemId: tab.id })).map((c: any) => c.text)).toEqual(["Green button"]);
     expect((await ctx.fns.canvas.comments({ itemId: tab.id, all: true })).length).toBe(2);
+
+    // A person removes only their own comments, with the thread.
+    await ctx.fns.canvas.addComment({ itemId: tab.id, text: "Agent note", author: "agent" });
+    expect((await ctx.fns.canvas.removeComments({ itemId: tab.id, author: "user:2" })).removed).toBe(0);
+    expect((await ctx.fns.canvas.removeComments({ itemId: tab.id, author: "user:1", ids: [c1.id] })).removed).toBe(1);
+    expect((await ctx.fns.canvas.comments({ itemId: tab.id, all: true })).map((c: any) => c.text)).toEqual(["Green button", "Agent note"]);
+    const n = await ctx.fns.procs.db.select({ sql: "SELECT count(*)::int AS n FROM canvas_comments WHERE item_id = ?", params: [tab.id] });
+    expect(n[0].n).toBe(2);
 });

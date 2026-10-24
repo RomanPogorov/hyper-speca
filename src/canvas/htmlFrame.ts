@@ -27,16 +27,27 @@ const json = (value: unknown) => JSON.stringify(value ?? null).replace(/</g, "\\
  * fresh `load` data, under a sandboxing CSP header.
  * @param opts.agentId Agent whose canvas holds the tab.
  * @param opts.itemId The html tab.
+ * @param opts.v Serve this saved version instead of the draft (no load data, no state).
+ * @param opts.edit Serve the draft as it was right after this edit.
  */
 export default async function (ctx: Context, _session: Session | null, opts: {
     /** Agent whose canvas holds the tab. */
     agentId: string;
     /** The html tab. */
     itemId: number;
+    /** Serve this saved version instead of the draft (no load data, no state). */
+    v?: number;
+    /** Serve the draft as it was right after this edit. */
+    edit?: number;
 }): Promise<Response> {
     const headers = { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": CSP, "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" };
-    const item = (await ctx.fns.canvas.list({ agentId: opts.agentId })).find(i => i.id === Number(opts.itemId));
+    let item = (await ctx.fns.canvas.list({ agentId: opts.agentId })).find(i => i.id === Number(opts.itemId));
     if (!item || item.kind !== "html") return new Response("no such html tab", { status: 404, headers });
+    if (opts.v || opts.edit) {
+        const at = await ctx.fns.canvas.version({ itemId: item.id, ...(opts.v ? { v: opts.v } : { edit: opts.edit }) }).catch(() => null);
+        if (!at) return new Response("no such version", { status: 404, headers });
+        item = { ...item, args: { html: at.args.html ?? "" }, state: at.state };
+    }
     let data: unknown = null;
     if (item.args.load) {
         try { data = await ctx.fns.canvas.runLoad({ source: String(item.args.load) }); }

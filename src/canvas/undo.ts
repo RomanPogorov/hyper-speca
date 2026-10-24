@@ -13,7 +13,7 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     agentId?: string;
 }): Promise<{ item: types.canvas.Item; undone: { n: number; note: string | null } | null }> {
     const tab = await ctx.fns.canvas.tab({ itemId: opts.itemId, agentId: opts.agentId });
-    const undone = await ctx.fns.canvas.locked({
+    const undone = (await ctx.fns.canvas.locked({
         agentId: tab.agentId,
         fn: async () => {
             const db = ctx.fns.procs.db;
@@ -23,6 +23,6 @@ export default async function (ctx: Context, _session: Session | null, opts: {
             await ctx.fns.canvas.settle({ itemId: tab.id });
             return { n: Number(last.n), note: last.note ?? null };
         },
-    });
+    })) as { n: number; note: string | null } | null;
     return { item: await ctx.fns.canvas.tab({ itemId: tab.id }), undone };
 }

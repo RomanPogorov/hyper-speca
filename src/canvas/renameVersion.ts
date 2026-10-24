@@ -17,13 +17,13 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     agentId?: string;
 }): Promise<{ renamed: boolean }> {
     const tab = await ctx.fns.canvas.tab({ itemId: opts.itemId, agentId: opts.agentId });
-    const renamed = await ctx.fns.canvas.locked({
+    const renamed = (await ctx.fns.canvas.locked({
         agentId: tab.agentId,
         fn: async () => {
             const rows = (await ctx.fns.procs.db.select({ sql: "UPDATE canvas_versions SET note = ? WHERE item_id = ? AND v = ? RETURNING v", params: [String(opts.name ?? "").trim().slice(0, 200) || null, tab.id, Number(opts.v)] })) as any[];
             if (rows.length) await ctx.fns.procs.db.run({ sql: "UPDATE canvas_items SET updated_at = ? WHERE id = ?", params: [Date.now(), tab.id] });
             return rows.length > 0;
         },
-    });
+    })) as boolean;
     return { renamed };
 }

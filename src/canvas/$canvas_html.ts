@@ -35,7 +35,9 @@ export default {
         const esc = (text: string) => ctx.fns.procs.ui.escape({ text });
         // The page is served by its own route under a CSP header with a sandbox directive (canvas.htmlFrame);
         // the attribute sandbox here is the second lock. No allow-same-origin: an opaque origin.
-        const src = `/canvas/${encodeURIComponent(opts.agentId)}/item/${opts.item.id}/frame`;
+        const shown = opts.item.shown;
+        const at = shown?.v ? `?ver=${shown.v}` : shown?.edit ? `?at=${shown.edit}` : "";
+        const src = `/canvas/${encodeURIComponent(opts.agentId)}/item/${opts.item.id}/frame${at}`;
         return `<iframe data-canvas-frame="${opts.item.id}" sandbox="allow-scripts allow-forms allow-modals allow-pointer-lock allow-downloads allow-popups allow-popups-to-escape-sandbox" src="${esc(src)}" title="${esc(opts.item.title)}" referrerpolicy="no-referrer" class="block h-full w-full border-0 bg-white"></iframe>`;
     },
     describe(_ctx: Context, opts: { item: types.canvas.Item }) {

@@ -4,6 +4,7 @@
  * Use to compare two versions side by side or to see what a version held before bringing it back.
  * @param opts.itemId Tab to read.
  * @param opts.v Version number; omitted reads the current draft.
+ * @param opts.edit Instead of a version: the draft as it was right after this edit (canvas.draft lists them).
  * @param opts.agentId Agent whose canvas the tab must be on. @default any
  */
 export default async function (ctx: Context, _session: Session | null, opts: {
@@ -11,10 +12,18 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     itemId: number;
     /** Version number; omitted reads the current draft. */
     v?: number;
+    /** Instead of a version: the draft as it was right after this edit (canvas.draft lists them). */
+    edit?: number;
     /** Agent whose canvas the tab must be on. @default any */
     agentId?: string;
 }): Promise<{ v: number | null; title: string; args: Record<string, any>; state: Record<string, any> }> {
     const tab = await ctx.fns.canvas.tab({ itemId: opts.itemId, agentId: opts.agentId });
+    if (opts.edit != null) {
+        const e = ((await ctx.fns.procs.db.select({ sql: "SELECT body FROM canvas_edits WHERE item_id = ? AND n = ? AND dropped_at IS NULL", params: [tab.id, Number(opts.edit)] })) as any[])[0];
+        if (!e) throw new Error(`canvas.version: tab ${tab.id} has no edit ${opts.edit} in its draft`);
+        const b = typeof e.body === "string" ? JSON.parse(e.body) : e.body ?? {};
+        return { v: null, title: String(b.title ?? tab.title), args: b.args ?? {}, state: b.state ?? {} };
+    }
     if (opts.v == null) return { v: null, title: tab.title, args: tab.args, state: tab.state };
     const row = ((await ctx.fns.procs.db.select({ sql: "SELECT body FROM canvas_versions WHERE item_id = ? AND v = ?", params: [tab.id, Number(opts.v)] })) as any[])[0];
     // The first version of a tab never written is what it holds now.

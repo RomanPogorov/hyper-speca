@@ -12,7 +12,13 @@ export async function sendMessage(c: Ctx, s: HSession) {
   const text = String(fd.get("text") ?? "").trim();
   const files = takeUploads(c, fd.getAll("att").map(String).slice(0, 20));
   if (!text && !files.length) return null;
-  const key = String(fd.get("key") ?? "") || `q${Date.now().toString(36)}`;
+  await say(c, s, text, String(fd.get("key") ?? "") || `q${Date.now().toString(36)}`, files);
+  // Hyper takes the message at once (no inbox): the log shows it on the next live refresh
+  return queueDock(await chatCtx(c, (await getSession(c.h, c.user.id, s.id)) ?? s), []);
+}
+
+/** A message to the chat's agent as the person (the composer, the canvas's comments and buttons). */
+export async function say(c: Ctx, s: HSession, text: string, key: string, files: File[] = []) {
   const body = new FormData();
   body.set("text", text);
   body.set("requestId", `${s.id}:${key}`);
@@ -23,8 +29,6 @@ export async function sendMessage(c: Ctx, s: HSession) {
     const j = await res.json().catch(() => ({} as any));
     throw new Error(String(j?.error ?? `message not accepted (${res.status})`));
   }
-  // Hyper takes the message at once (no inbox): the log shows it on the next live refresh
-  return queueDock(await chatCtx(c, (await getSession(c.h, c.user.id, s.id)) ?? s), []);
 }
 
 export async function stopChat(c: Ctx, s: HSession) {

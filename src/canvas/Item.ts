@@ -24,4 +24,6 @@ export type Item = {
     version: number;
     /** Edits of the draft since that version (canvas.write / canvas.edit, not undone). */
     draftEdits: number;
+    /** Set only while an older moment is drawn: the saved version or the draft edit it shows (canvas.version). */
+    shown?: { v?: number; edit?: number };
 };

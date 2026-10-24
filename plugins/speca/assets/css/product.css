@@ -1894,3 +1894,9 @@ html.app-mac.app-plain body::before { content: ""; position: fixed; inset: 0 0 a
 .place { display: inline-flex; align-items: center; gap: var(--s-1); max-width: 100%; padding: 3px var(--s-2_5); border: 1px solid var(--line); border-radius: var(--r-full); background: var(--surface); color: var(--foreground); font: inherit; font-weight: 500; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background .15s, border-color .15s; }
 .place:hover { background: var(--hover); border-color: var(--line-strong); }
 .place .ic { color: var(--fg-3); flex: none; }
+
+/* Hyper's kinds run in a frame page of their own: no pane border, full height; in comment mode the frame lets the
+   click through to the pin layer (it has no comment script inside) */
+.tab-content > .hyper-frame { border: 0; border-radius: 0; background: var(--bg); }
+.tab-content.cmt-on iframe.hyper-frame { pointer-events: none; }
+.tab-bare > .hyper-frame { flex: 1; height: auto; min-height: 0; border: 0; border-radius: 0; background: var(--bg); }
