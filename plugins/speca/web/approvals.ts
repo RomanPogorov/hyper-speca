@@ -169,11 +169,12 @@ export async function decide(h: H, id: string, decision: "approved" | "rejected"
 }
 
 /** Cards still waiting, for the agents dashboard and the chat list. */
-export async function pending(h: H, o: { chatIds?: string[]; agentId?: string } = {}): Promise<Array<{ id: string; chat_id: string; agent_id: string; kind: Kind; summary: string; plugin: string | null; plugin_id: string | null; preview_hash: string; created_at: number }>> {
+export async function pending(h: H, o: { chatIds?: string[]; agentId?: string } = {}): Promise<Array<{ id: string; chat_id: string; agent_id: string; kind: Kind; summary: string; plugin: string | null; plugin_id: string | null; preview_hash: string; created_at: number; effect: string | null; items: string[] }>> {
   const { chatIds, agentId } = o;
   if (chatIds && !chatIds.length) return [];
-  const rows = await sel(h, `SELECT id, chat_id, agent_id, kind, summary, plugin, plugin AS plugin_id, preview_hash, created_at FROM speca_approvals WHERE status = 'pending'${chatIds ? ` AND chat_id IN (${chatIds.map(() => "?").join(", ")})` : ""}${agentId ? " AND agent_id = ?" : ""} ORDER BY created_at`, [...(chatIds ?? []), ...(agentId ? [agentId] : [])]);
-  return rows.map((r: any) => ({ ...r, created_at: Number(r.created_at) }));
+  const rows = await sel(h, `SELECT id, chat_id, agent_id, kind, summary, plugin, plugin AS plugin_id, preview_hash, created_at, effect, preview->'items' AS items FROM speca_approvals WHERE status = 'pending'${chatIds ? ` AND chat_id IN (${chatIds.map(() => "?").join(", ")})` : ""}${agentId ? " AND agent_id = ?" : ""} ORDER BY created_at`, [...(chatIds ?? []), ...(agentId ? [agentId] : [])]);
+  const list = (v: unknown) => (Array.isArray(v) ? v : typeof v === "string" ? (() => { try { return JSON.parse(v); } catch { return []; } })() : []).map(String);
+  return rows.map((r: any) => ({ ...r, created_at: Number(r.created_at), items: list(r.items) }));
 }
 
 /** The signal that ends a wait started from an agent function (eval): its call stopped, or the agent. */

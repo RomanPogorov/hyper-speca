@@ -5,6 +5,7 @@ import type { App, T, UserRow, SessionRow } from "../types.ts";
 import { initials } from "../types.ts";
 import { rel } from "../fmt.ts";
 import { listSessions, projects as loadProjects, type ProjectRow } from "../hyper.ts";
+import { pending } from "../approvals.ts";
 
 // Hyper: chats are its agents, projects its projects; the person's marks (pinned, seen) live in speca_chat.
 let hctx: any = null;
@@ -16,9 +17,11 @@ export async function sidebarData(app: App, me: UserRow) {
   const all = await listSessions(hctx, me.id);
   const sessions = all;
   const archived = (await loadProjects(hctx, true)).map((p) => ({ id: p.id, name: p.name }));
-  const agentsWorking = sessions.filter((s) => s.status === "running").length;
+  const agentsWorking = sessions.filter((s) => s.status === "running" || s.status === "waiting").length;
   const forkParents = new Map(all.map((s) => [s.id, s.title] as [string, string]));
-  return { projects, sessions, badge: 0, unread: 0, coordinator: null as (SessionRow & { last_idx: number | null }) | null, people: 1, archived, forkParents, agentNeeds: 0, agentsWorking };
+  // what waits for the person across their chats (web/approvals.ts): confirmations, plans, questions
+  const agentNeeds = (await pending(hctx).catch(() => [])).length;
+  return { projects, sessions, badge: 0, unread: 0, coordinator: null as (SessionRow & { last_idx: number | null }) | null, people: 1, archived, forkParents, agentNeeds, agentsWorking };
 }
 
 /** A fork goes right under the chat it came from when that one is in the same list (its own forks under it). */

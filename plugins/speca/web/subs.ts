@@ -60,14 +60,14 @@ function tkPlan(t: T, plan: Plan[], over: "done" | "other" | null): { pct: numbe
   if (over === "done") return { pct: 100, label: t("subb.of", { done: plan.length, total: plan.length }) };
   return { pct: Math.round((done / plan.length) * 100), label: over ? t("subb.of", { done, total: plan.length }) : t("tk.step", { n: Math.min(done + 1, plan.length), total: plan.length }) };
 }
-function tkProgress(t: T, plan: Plan[], o: { working: boolean; over: "done" | "other" | null; idle?: string }) {
+export function tkProgress(t: T, plan: Plan[], o: { working: boolean; over: "done" | "other" | null; idle?: string }) {
   const p = tkPlan(t, plan, o.over);
   const at = plan.find((x) => x.status === "in_progress") ?? plan.find((x) => x.status === "pending");
   if (p) return { text: o.working ? at?.content ?? t("chat.thinking") : at?.content ?? t("tk.allDone"), label: p.label, pct: p.pct };
   return o.working ? { text: o.idle ?? t("chat.thinking"), pct: null } : null;
 }
-const tkUsage = (t: T, fresh: number, cached: number) => (fresh + cached > 0 ? [kn(t, fresh), cached > 0 ? `${t("tk.cache")} ${kn(t, cached)}` : ""].filter(Boolean).join(" · ") : undefined);
-const tkBtn = (icon: string, tip: string, o: { href?: string; attrs?: Raw; tk?: "go" | "stop" } = {}) =>
+export const tkUsage = (t: T, fresh: number, cached: number) => (fresh + cached > 0 ? [kn(t, fresh), cached > 0 ? `${t("tk.cache")} ${kn(t, cached)}` : ""].filter(Boolean).join(" · ") : undefined);
+export const tkBtn = (icon: string, tip: string, o: { href?: string; attrs?: Raw; tk?: "go" | "stop" } = {}) =>
   k.button({ icon, variant: "ghost", size: "icon-sm", tooltip: tip, side: "top", href: o.href, attrs: html`${o.tk ? html`data-tk="${o.tk}" ` : ""}${o.attrs ?? html``}` });
 
 function card(t: T, v: Sub): Raw {
