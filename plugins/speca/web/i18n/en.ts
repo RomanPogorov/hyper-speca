@@ -1631,4 +1631,10 @@ export const en = {
   "pl.skillHint": "How to use it — the agent reads it when it needs it",
   "pl.domains": "Sites it works with",
   "pl.sub": "{on} of {all} on · each adds functions, pages and skills for the agent",
+  "dy.coord": "Coordinator",
+  "dy.askPlaceholder": "Ask or assign: “find last week's open pull requests”…",
+  "dy.emptyHint": "Nothing waits for your decision. What agents finished shows up here.",
+  "dy.tasks": "Tasks",
+  "dy.sent": "Sent to the coordinator",
+  "dy.taskDone": "Done",
 } satisfies Record<string, Entry>;

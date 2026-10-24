@@ -7,6 +7,7 @@
  * @param opts.tz The routine's time zone (for its weekdays).
  * @param opts.days Weekdays it runs on, 0 = Sunday; all when empty.
  * @param opts.force Run even on a day it does not run. @default false
+ * @param opts.name The cron task's name, to remember the chat it started (the brief on My day reads it).
  */
 export default async function (ctx: Context, _session: Session | null, opts: {
   /** The chat's title. */ title?: string;
@@ -14,6 +15,7 @@ export default async function (ctx: Context, _session: Session | null, opts: {
   /** The routine's time zone. */ tz?: string;
   /** Weekdays it runs on, 0 = Sunday. */ days?: number[] | null;
   /** Run even on a day it does not run. @default false */ force?: boolean;
+  /** The cron task's name. */ name?: string;
   [k: string]: unknown;
 }): Promise<{ agentId: string | null; skipped?: string }> {
   const prompt = String(opts.prompt ?? "").trim();
@@ -32,5 +34,6 @@ export default async function (ctx: Context, _session: Session | null, opts: {
   body.set("requestId", `${id}:routine`);
   const res: Response = await (ctx.fns as any).agent.acceptMessage({ req: new Request(`http://localhost/agent/${id}/messages`, { method: "POST", body }), params: { id } });
   if (res.status >= 400) throw new Error(`message not accepted (${res.status})`);
+  if (opts.name) await ctx.fns.procs.db.run({ sql: "UPDATE cron_tasks SET args = args || jsonb_build_object('lastAgent', ?::text) WHERE name = ?", params: [id, String(opts.name)] }).catch(() => {});
   return { agentId: id };
 }

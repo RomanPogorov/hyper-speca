@@ -205,7 +205,7 @@ export async function addRoutine(c: Ctx): Promise<void> {
   if (!prompt) throw new Error(c.t("my.noPrompt"));
   const tz = c.user.tz ?? appShim.config.org.timezone;
   const name = `${ROUTINE}${Date.now().toString(36)}`;
-  await c.h.fns.cron.add({ name, fn: "speca.routineRun", every: w.every, args: { title: (f.title ?? "").trim().slice(0, 120), prompt, when: w.id, tz, days: w.days ?? null, userId: c.user.id } });
+  await c.h.fns.cron.add({ name, fn: "speca.routineRun", every: w.every, args: { name, title: (f.title ?? "").trim().slice(0, 120), prompt, when: w.id, tz, days: w.days ?? null, userId: c.user.id } });
   // the first run at that time of day (the interval keeps it there)
   await c.h.fns.procs.db.run({ sql: "UPDATE cron_tasks SET next_run_at = ? WHERE name = ?", params: [nextAt(w, tz), name] });
 }
@@ -214,7 +214,7 @@ export async function runRoutine(c: Ctx, id: string): Promise<void> {
   const [x] = ((await c.h.fns.cron.list({ name: `${ROUTINE}${id}` })) as any[]);
   if (!x) throw new Error(c.t("common.notFound"));
   const a = typeof x.args === "string" ? JSON.parse(x.args) : x.args ?? {};
-  await c.h.fns.speca.routineRun({ ...a, force: true });
+  await c.h.fns.speca.routineRun({ ...a, name: x.name, force: true });
 }
 
 export async function removeRoutine(c: Ctx, id: string): Promise<void> {
