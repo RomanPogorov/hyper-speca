@@ -43,10 +43,10 @@
     const sid = document.querySelector("#log[data-session]")?.dataset.session;
     if (!sid) { toast(ru ? "Откройте чат, чтобы выполнить команду" : "Open a chat to run the command", "", "error"); return; }
     sessionStorage.setItem("dh-term-run", JSON.stringify({ cmd, at: Date.now() }));
-    const tab = document.querySelector('#tabs .tab[data-kind="servers.terminal"]');
+    const tab = document.querySelector('#tabs .tab[data-kind="speca.terminal"]');
     if (tab) { tab.click(); return; }
-    const r = await post(`/speca/s/${sid}/canvas`, { kind: "servers.terminal" }).catch(() => null);
-    if (!r?.ok) { sessionStorage.removeItem("dh-term-run"); toast(ru ? "Терминал недоступен: включите «Серверы (SSH)» в Подключениях" : "No terminal: turn on “Servers (SSH)” in Connections", "", "error"); return; }
+    const r = await post(`/speca/s/${sid}/term/open`, {}).catch(() => null);
+    if (!r?.ok) { sessionStorage.removeItem("dh-term-run"); toast(ru ? "Терминал не открылся" : "The terminal did not open", "", "error"); return; }
     document.dispatchEvent(new CustomEvent("dh-canvas"));
   }
   function toast(title, description = "", category = "success") {

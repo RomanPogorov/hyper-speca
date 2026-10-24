@@ -1,0 +1,48 @@
+/* The SSH terminal: a dark screen with a slim header and a row of keys for phones. UI text uses the system font;
+   only the terminal itself is monospace. */
+.sterm { --st-bg: #0f1115; --st-fg: #e6e6e6; --st-dim: #9aa3b2; --st-line: #252a33; --st-key: #1b1f27;
+  position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--st-bg); color: var(--st-fg);
+  font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.sterm [hidden] { display: none !important; }
+.sterm-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--st-line); min-height: 40px; }
+.sterm-dot { width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex: none; }
+.sterm[data-state="open"] .sterm-dot { background: #22c55e; }
+.sterm[data-state="closed"] .sterm-dot { background: #ef4444; }
+.sterm-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sterm-state { color: var(--st-dim); white-space: nowrap; }
+.sterm-grow { flex: 1; }
+.sterm-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; border: 0;
+  background: transparent; color: var(--st-dim); cursor: pointer; text-decoration: none; }
+.sterm-btn:hover, .sterm-btn:focus-visible { background: var(--st-key); color: var(--st-fg); }
+.sterm-btn svg { width: 16px; height: 16px; }
+.sterm-screen { flex: 1; min-height: 0; padding: 6px 4px 0 8px; overflow: hidden; }
+.sterm-screen .xterm { height: 100%; }
+.sterm-screen .xterm-viewport { background: var(--st-bg) !important; }
+.sterm-pick { flex: 1; overflow: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+.sterm-pick p { color: var(--st-dim); margin: 0 0 6px; }
+.sterm-srv { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; min-height: 44px; border-radius: 10px;
+  border: 1px solid var(--st-line); background: var(--st-key); color: var(--st-fg); cursor: pointer; font: inherit; text-align: left; }
+.sterm-srv span { color: var(--st-dim); }
+.sterm-will { margin: 0 0 6px; padding: 10px 12px; border-radius: 10px; background: var(--st-key); color: var(--st-fg); overflow-wrap: anywhere; }
+.sterm-will span { color: var(--st-dim); }
+.sterm-will b { font-weight: 600; white-space: pre-wrap; }
+.sterm-srv:hover, .sterm-srv:focus-visible { border-color: #3a4252; }
+.sterm-over { position: absolute; inset: 41px 0 0 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(15, 17, 21, .86); text-align: center; padding: 24px; }
+.sterm-over[hidden] { display: none; }
+.sterm-msg { max-width: 420px; margin: 0; color: var(--st-fg); }
+.sterm-again { min-height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: var(--st-fg); color: var(--st-bg); font: inherit; font-weight: 600; cursor: pointer; }
+.sterm-keys { display: flex; gap: 6px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); overflow-x: auto; border-top: 1px solid var(--st-line);
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; flex: none; }
+.sterm-keys::-webkit-scrollbar { display: none; }
+.sterm-key { flex: none; min-width: 44px; height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--st-line); background: var(--st-key);
+  color: var(--st-fg); font: inherit; font-size: 14px; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.sterm-key[aria-pressed="true"] { background: var(--st-fg); color: var(--st-bg); border-color: var(--st-fg); }
+.sterm-key:active { transform: translateY(1px); }
+/* only phones need the key row; on a desk it stays out of the way */
+@media (pointer: fine) { .sterm:not(.sterm-full) .sterm-keys { display: none; } }
+
+/* the full-screen page (a phone) */
+html:has(.sterm-page), .sterm-page { margin: 0; height: 100%; background: #0f1115; overscroll-behavior: none; }
+.sterm-full { position: fixed; inset: 0; height: 100dvh; padding-top: env(safe-area-inset-top); box-sizing: border-box; }
+.sterm-full .sterm-bar { padding-left: max(12px, env(safe-area-inset-left)); }

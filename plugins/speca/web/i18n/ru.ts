@@ -239,6 +239,7 @@ export const ru: Record<keyof typeof en, Entry> = {
   "canvas.recentlyClosed": "Недавно закрытые",
   "canvas.boards": "Доски и браузер",
   "canvas.browser": "Браузер",
+  "canvas.terminal": "Терминал",
   "canvas.browserDown": "Браузер не запустился: Hyper держит свой Chrome в tmux — поставьте его (brew install tmux) или запустите Chrome с --remote-debugging-port=9222",
   "canvas.noDiff": "Различий нет",
   "canvas.noDraft": "С v{v} изменений нет",

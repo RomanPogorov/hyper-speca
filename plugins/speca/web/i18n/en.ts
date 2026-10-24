@@ -237,6 +237,7 @@ export const en = {
   "canvas.recentlyClosed": "Recently closed",
   "canvas.boards": "Boards and browser",
   "canvas.browser": "Browser",
+  "canvas.terminal": "Terminal",
   "canvas.browserDown": "The browser did not start: Hyper runs its Chrome in tmux — install it (brew install tmux) or start Chrome with --remote-debugging-port=9222",
   "canvas.noDiff": "No differences",
   "canvas.noDraft": "No changes since v{v}",
