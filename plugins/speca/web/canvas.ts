@@ -14,11 +14,11 @@ import { compareHtml } from "./design/kind.ts";
 export type Tab = { id: number; agentId: string; kind: string; title: string; args: Record<string, any>; state: Record<string, any>; active: boolean; createdAt: number; updatedAt: number; closedAt: number | null; version?: number; draftEdits?: number };
 
 /** Kinds Speca draws itself (in the page, with Speca's styles); the rest are Hyper's and go into a frame. */
-export const SPECA_KINDS = new Set<string>(["speca.doc", "speca.table", "speca.chart", "speca.metrics", "speca.list", "speca.board", "speca.compare", "speca.design"]);
+export const SPECA_KINDS = new Set<string>(["speca.doc", "speca.table", "speca.chart", "speca.metrics", "speca.list", "speca.board", "speca.compare", "speca.design", "speca.changes", "speca.files", "speca.file"]);
 
 const kindsOf = (c: Ctx): Record<string, { icon?: string; render: Function }> => (c.h.state as any).canvas?.kinds ?? {};
 /** Speca's own icons for the kinds it has (its kit and Hyper's html page); Hyper's other kinds keep their Phosphor icon. */
-const KIND_ICONS: Record<string, string> = { "speca.doc": "fileText", "speca.table": "table", "speca.chart": "activity", "speca.metrics": "gauge", "speca.list": "listChecks", "speca.board": "layout", "speca.compare": "grid", "speca.design": "penTool", html: "appWindow" };
+const KIND_ICONS: Record<string, string> = { "speca.doc": "fileText", "speca.table": "table", "speca.chart": "activity", "speca.metrics": "gauge", "speca.list": "listChecks", "speca.board": "layout", "speca.compare": "grid", "speca.design": "penTool", "speca.changes": "fileDiff", "speca.files": "folderTree", "speca.file": "file", html: "appWindow" };
 const tabIcon = (c: Ctx, kind: string) => ic(KIND_ICONS[kind] ?? `ph:${kindsOf(c)[kind]?.icon ?? "app-window"}`, "ic-sm tico");
 
 /** The chat a tab belongs to (the person's own), for the tab's own actions (/speca/canvas/:tab/…). */
@@ -62,7 +62,10 @@ export type BodyOpts = { v?: number; compare?: boolean; at?: number; readonly?: 
 
 /** Kinds whose content is an address, not something written: no draft, no versions (a page's live state is not
  *  its content: an html tab keeps versions of its html). */
-const versioned = (_c: Ctx, tab: Tab) => !["view", "url", "file"].includes(tab.kind);
+const versioned = (_c: Ctx, tab: Tab) => !["view", "url", "file", ...BARE_KINDS].includes(tab.kind);
+/** Speca's bare tabs: a live view of something outside the canvas (the project's files, its changes) fills the panel —
+ *  no title line, no versions, no comments. */
+const BARE_KINDS = ["speca.changes", "speca.files", "speca.file"];
 
 function commentStrings(t: Ctx["t"]): string {
   const keys = ["title", "q", "hint", "ph", "toAgent", "post", "reply", "replyPh", "resolve", "reopen", "showResolved", "remove", "sendNow", "sent", "add", "addHint", "sendAll", "sentAll", "unsent", "clearAll", "clearAsk", "list", "listEmpty", "pick", "selectAll", "unselect", "removeN", "removeAsk", "removedN", "sentMark", "resolvedMark", "page", "justNow", "minAgo", "hAgo", "you", "agent",
@@ -88,7 +91,7 @@ async function drawn(c: Ctx, s: HSession, tab: Tab, held: Tab, q: string): Promi
 export async function tabBody(c: Ctx, s: HSession, tab: Tab, opts: BodyOpts = {}): Promise<Raw> {
   const t = c.t;
   const vd = versioned(c, tab);
-  if (!vd) return html`<div class="tab-bare">${await drawn(c, s, tab, tab, "")}</div>`;
+  if (!vd) return html`<div class="tab-bare${BARE_KINDS.includes(tab.kind) ? " tab-full" : ""}">${await drawn(c, s, tab, tab, "")}</div>`;
   const vs: Version[] = [...(await c.h.fns.canvas.versions({ itemId: tab.id }))].reverse();
   const journal: { edits: Edit[] } = await c.h.fns.canvas.draft({ itemId: tab.id });
   const edits = journal.edits;

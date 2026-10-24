@@ -46,6 +46,12 @@ export default async function (
     await mark({ type: 'turn_start', at: started });
     // The open turn's id, for what joins one answer's work into one step (canvas edits: one answer, one undo).
     if (agent.scratchpad) agent.scratchpad.turn = `${agent.id}:${started}`;
+    // Extension points around the turn (a workspace snapshot, …): awaited, never fatal.
+    const turnId = `${agent.id}:${started}`;
+    const around = (name: string, more: Record<string, unknown> = {}) => Promise.resolve()
+        .then(() => ctx.fns.procs.hooks.run({ name, opts: { agentId: agent.id, turnId, dir: (agent as any).workspaceDir ?? null, host: (agent as any).workspaceHost ?? null, ...more } }))
+        .catch((e: any) => ctx.fns.procs.log?.warn?.({ event: name, msg: String(e?.message ?? e), agentId: agent.id }));
+    await around('agent.turnStart');
     let status: 'completed' | 'failed' | 'cancelled' | 'waiting' = 'completed';
     let error: string | null = null;
     try {
@@ -58,6 +64,7 @@ export default async function (
     } finally {
         delete agent.scratchpad?.mobileStream;
         delete agent.scratchpad?.turn;
+        await around('agent.turnEnd', { status });
         await mark({ type: 'turn_end', status, error, at: Date.now(), ms: Date.now() - started });
     }
 }

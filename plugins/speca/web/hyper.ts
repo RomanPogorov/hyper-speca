@@ -202,6 +202,11 @@ export function toLog(s: HSession, rows: HEvent[], now: ReturnType<typeof live> 
         if (p.event && p.memberId) ev(r.idx, "notice", { text: `${p.taskTitle ? `${p.taskTitle}: ` : ""}${p.summary ?? p.event}`, sub: p.memberId }, ts);
         break;
       }
+      case "turn_changes": {
+        // what a turn (or the person, by hand) changed in the chat's folder: the "N files changed" card
+        ev(r.idx, "turn_changes", p, ts);
+        break;
+      }
       case "model_changed": {
         ev(r.idx, "system_note", { text: `${prettyModel(String(p.from ?? ""))} → ${prettyModel(String(p.to ?? ""))}` }, ts);
         break;

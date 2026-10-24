@@ -4,7 +4,9 @@ import { html, type Raw } from "./html.ts";
 import { ic } from "./ui/icons.ts";
 import type { EventRow } from "./types.ts";
 import { appShim, getSession, loadEvents, models, setChat, type HSession } from "./hyper.ts";
-import { chatHead, composer, emptyChat, logHtml, olderMark, queueDock, schedDock, type ChatCtx } from "./views/chat.ts";
+import { chatHead, composer, emptyChat, logHtml, olderMark, queueDock, schedDock, type ChatCtx, type CodeCtx } from "./views/chat.ts";
+import { codeDir } from "./code/files.ts";
+import { branchOf } from "./code/git.ts";
 import { shell } from "./views/layout.ts";
 import { closedOf, sidebar } from "./views/sidebar.ts";
 import { canvasHtml } from "./canvas.ts";
@@ -22,11 +24,18 @@ export async function chatOf(c: Ctx): Promise<HSession> {
   return s;
 }
 
+/** A chat whose agent works in a folder on this machine is a code project: Files and Changes tabs, the branch chip. */
+export async function codeCtx(c: Ctx, sid: string): Promise<CodeCtx | null> {
+  const code = await codeDir(c.h, sid);
+  if (!code) return null;
+  return { projectId: sid, dir: code.dir, repo: null, runner: null, computer: null, scripts: [], run: null, canRun: false, branch: await branchOf(code.h, code.dir) };
+}
+
 export async function chatCtx(c: Ctx, s: HSession): Promise<ChatCtx> {
   const forkOf = s.fork_idx != null && s.parent_id ? await getSession(c.h, c.user.id, s.parent_id) : null;
   return {
     app: appShim, t: c.t, me: c.user, s, owner: c.user, readonly: false, participant: false, preview: null,
-    models: await models(c.h), tzone: c.user.tz ?? appShim.config.org.timezone, csrf: c.csrf, code: null,
+    models: await models(c.h), tzone: c.user.tz ?? appShim.config.org.timezone, csrf: c.csrf, code: await codeCtx(c, s.id),
     forkOf: forkOf ? { id: forkOf.id, title: forkOf.title } : null, forks: [],
   };
 }

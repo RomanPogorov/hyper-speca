@@ -1910,3 +1910,28 @@ table.grid { display: table; }
 /* a comparison cell: its buttons at the bottom, a document inside without a second frame */
 .cmp-doc { flex: 1; }
 .cmp-doc > .canvas-doc { border: 0; padding: 0; background: none; }
+/* File viewer: controls live in the tab's header line (head()); the switch works without scripts. */
+.fvw { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fvw-meta { color: var(--fg-3); font-size: 12px; white-space: nowrap; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.fvw-sw { position: relative; display: inline-flex; padding: 1px; border-radius: 7px; background: var(--sunk); font-size: 12px; }
+.fvw-sw input { position: absolute; opacity: 0; pointer-events: none; }
+.fvw-sw label { padding: 2px 9px; border-radius: 6px; cursor: pointer; color: var(--fg-3); line-height: 18px; }
+.fvw-sw label:hover { color: var(--fg-2); }
+.fvw-sw input:checked + label { background: var(--surface); color: var(--foreground); box-shadow: 0 0 0 1px var(--line); }
+.fvw-sw:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--signal-soft); }
+.fvw-act { color: var(--fg-3); }
+.fvw-act:hover { color: var(--foreground); }
+/* view by default; code when its radio (in the header) is checked */
+.fvw-code { display: none; }
+.doc:has(.fvw-r-code:checked) .fvw-code { display: block; }
+.doc:has(.fvw-r-code:checked) .fvw-view { display: none; }
+.fvw-body { min-width: 0; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: auto; }
+.fvw-body.flush { padding: 0; overflow: hidden; }
+.fvw-body pre { margin: 0; }
+.fvw-img { display: block; max-width: 100%; margin: 0 auto; border-radius: 8px; }
+.fvw-frame { display: block; width: 100%; height: min(78vh, 900px); border: 0; background: #fff; }
+.fvw-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 40px 12px; color: var(--fg-2); text-align: center; }
+/* speca.file: the viewer fills a bare tab, its header line is its own */
+.tab-bare:has(> .fvw-doc) { padding: 0; }
+.fvw-doc { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fvw-doc > .tab-content { flex: 1; min-height: 0; overflow: auto; }
