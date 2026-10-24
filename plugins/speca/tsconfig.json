@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "noUncheckedIndexedAccess": false },
+  "include": ["web/**/*.ts", "src/**/*.ts", "../../src/**/*.d.ts", "../../.hyper/**/*.d.ts"]
+}

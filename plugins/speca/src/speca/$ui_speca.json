@@ -1,0 +1,7 @@
+{
+  "title": "Speca",
+  "home": "/speca",
+  "agent": "/speca/s/{id}",
+  "icon": "ph-sparkle",
+  "description": "Speca's interface: chats with turns and work logs, canvases with versions, comments and comparison, the agents dashboard."
+}

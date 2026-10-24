@@ -1,0 +1,15 @@
+{
+  "name": "speca",
+  "private": true,
+  "type": "module",
+  "procs": {
+    "src": "src",
+    "label": "Speca UI",
+    "icon": "ph-sparkle",
+    "description": "Speca's interface on Hyper: the chat, canvases, settings, plugins and connections with Speca's design, served at /speca."
+  },
+  "dependencies": {
+    "highlight.js": "11.12.0",
+    "marked": "18.1.1"
+  }
+}
