@@ -1,0 +1,182 @@
+/* Design canvas kit — the components every piece of the canvas's own UI is built from (panel, menus, bars,
+   popovers, comments). Its tokens sit on top of the system's (docs/DESIGN.md): no raw colours, no orange/amber, no
+   monospace. Builders for the markup: dck.js. Catalogue: plugins/design-canvas/COMPONENTS.md, live at /speca/design/kit. */
+.dcv, .dk-scope {
+  --dk-h: 26px;                 /* control height */
+  --dk-h-in: 22px;              /* a control inside a control (segment, icon in a field) */
+  --dk-r: var(--r-sm);          /* control radius */
+  --dk-r-in: 5px;               /* inner radius (segment, swatch in a field) */
+  --dk-pad: var(--s-2);         /* control padding, both sides */
+  --dk-chev: 12px;              /* select chevron size; the select keeps --dk-pad after it */
+  --dk-gap: var(--s-1);         /* between controls of one row */
+  --dk-label: 104px;            /* label column of a row */
+  --dk-fs: var(--fs-sm);
+  --dk-sec-x: var(--s-3);       /* section inset */
+  /* people on one canvas: a hue each (no orange/amber) */
+  --dk-peer-0: oklch(0.58 0.17 255); --dk-peer-1: oklch(0.58 0.15 155); --dk-peer-2: oklch(0.56 0.18 300);
+  --dk-peer-3: oklch(0.6 0.11 200); --dk-peer-4: oklch(0.6 0.18 350); --dk-peer-5: oklch(0.55 0.19 15);
+  --dk-line: var(--line); --dk-line-hi: var(--line-strong); --dk-bg: var(--surface); --dk-focus: var(--signal);
+}
+
+/* ── field: text / number ── */
+.dk-input { width: 100%; min-width: 0; height: var(--dk-h); padding: 0 var(--dk-pad); border: 1px solid var(--dk-line); border-radius: var(--dk-r); background: var(--dk-bg);
+  color: var(--foreground); font: inherit; font-size: var(--dk-fs); font-variant-numeric: tabular-nums; outline: none; transition: border-color .12s var(--ease); }
+.dk-input:hover { border-color: var(--dk-line-hi); }
+.dk-input:focus { border-color: var(--dk-focus); box-shadow: 0 0 0 2px var(--signal-soft); }
+.dk-input::placeholder { color: var(--fg-3); }
+.dk-input.dk-c { padding: 0 var(--s-1); text-align: center; }
+.dk-inh .dk-input::placeholder, .dk-input.dk-inh::placeholder { color: var(--fg-2); }
+.dk-input:disabled { color: var(--fg-3); background: var(--muted); }
+textarea.dk-input { height: auto; min-height: 64px; padding: var(--s-1_5) var(--dk-pad); line-height: 1.45; resize: vertical; }
+
+/* ── select: native list, our chevron, room after it ── */
+.dk-select { position: relative; display: block; min-width: 0; }
+.dk-select > select { width: 100%; height: var(--dk-h); padding: 0 calc(var(--dk-pad) + var(--dk-chev) + var(--s-1)) 0 var(--dk-pad); appearance: none; -webkit-appearance: none;
+  border: 1px solid var(--dk-line); border-radius: var(--dk-r); background: var(--dk-bg); color: var(--foreground); font: inherit; font-size: var(--dk-fs);
+  outline: none; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.dk-select > select:hover { border-color: var(--dk-line-hi); }
+.dk-select > select:focus { border-color: var(--dk-focus); box-shadow: 0 0 0 2px var(--signal-soft); }
+.dk-select::after { content: ""; position: absolute; right: var(--dk-pad); top: 50%; width: var(--dk-chev); height: var(--dk-chev); margin-top: calc(var(--dk-chev) / -2); pointer-events: none;
+  background: var(--fg-3); -webkit-mask: var(--dk-chev-img) center / contain no-repeat; mask: var(--dk-chev-img) center / contain no-repeat;
+  --dk-chev-img: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); }
+.dk-select.dk-inh > select { color: var(--fg-2); }
+
+/* ── segmented ── */
+.dk-seg { display: flex; gap: 2px; padding: 2px; height: var(--dk-h); background: var(--muted); border-radius: var(--dk-r); }
+.dk-seg > button { flex: 1; min-width: 0; height: var(--dk-h-in); padding: 0 var(--s-1_5); border: 0; background: none; border-radius: var(--dk-r-in); font: inherit; font-size: var(--dk-fs);
+  color: var(--fg-2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-seg > button:hover { color: var(--foreground); }
+.dk-seg > button[aria-pressed="true"] { background: var(--surface); color: var(--foreground); box-shadow: var(--shadow-1); }
+.dk-seg.dk-inh > button[aria-pressed="true"] { color: var(--fg-2); }
+
+/* ── colour: a swatch, a swatch with a field ── */
+.dk-sw { flex: none; width: var(--dk-h); height: var(--dk-h); padding: 0; border: 1px solid var(--dk-line-hi); border-radius: var(--dk-r); cursor: pointer;
+  background: linear-gradient(var(--c, transparent), var(--c, transparent)), repeating-conic-gradient(var(--muted) 0 25%, var(--surface) 0 50%) 0 0 / 8px 8px; }
+.dk-sw:focus-visible { outline: 2px solid var(--dk-focus); outline-offset: 1px; }
+.dk-crow { display: grid; grid-template-columns: var(--dk-h) minmax(0, 1fr) auto 24px; align-items: center; gap: var(--dk-gap); }
+.dk-crow > .dk-cn { min-width: 20px; padding: 0 var(--s-1); text-align: right; color: var(--fg-3); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.dk-color { display: grid; grid-template-columns: var(--dk-h) minmax(0, 1fr); gap: var(--dk-gap); }
+
+/* ── groups of controls ── */
+.dk-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--dk-gap); }
+.dk-pair.dk-wide { grid-template-columns: minmax(0, 1fr) 96px; }
+.dk-quad { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dk-gap); }
+.dk-split { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--dk-gap); }
+.dk-with { display: grid; grid-template-columns: minmax(0, 1fr) var(--dk-h); gap: var(--dk-gap); }
+.dk-cap.dk-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dk-cap.dk-cap-b { padding-right: calc(var(--dk-h) + var(--dk-gap)); margin-top: 2px; }
+.dk-cap { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--dk-gap); font-size: var(--fs-label); color: var(--fg-3); text-align: center; margin-top: -2px; }
+
+/* ── row: label + control ── */
+.dk-row { display: grid; grid-template-columns: var(--dk-label) minmax(0, 1fr); align-items: center; gap: var(--s-2); min-height: var(--dk-h); }
+.dk-row.dk-top { align-items: start; }
+.dk-row.dk-top > .dk-l { line-height: var(--dk-h); }
+.dk-l { color: var(--fg-2); font-size: var(--dk-fs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; }
+.dk-l.dk-scrub { cursor: ew-resize; }
+.dk-l.dk-raw { color: var(--fg-3); }
+.dk-sub { padding-left: calc(var(--dk-label) + var(--s-2)); display: flex; flex-direction: column; gap: var(--dk-gap); }
+
+/* ── section: a titled group with an optional "+" for the rows kept back ── */
+.dk-sec { display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-2) var(--dk-sec-x); border-bottom: 1px solid var(--dk-line); }
+.dk-sh { display: flex; align-items: center; gap: var(--s-1); height: 24px; font-size: var(--fs-meta); font-weight: 500; color: var(--fg-3); }
+.dk-sh > .dk-st { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.dk-sec > summary { list-style: none; cursor: pointer; }
+details.dk-sec > summary::-webkit-details-marker { display: none; }
+
+/* ── buttons: icon, text, chip ── */
+.dk-ib { flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: none; border-radius: var(--dk-r); color: var(--fg-3); font: inherit; cursor: pointer; }
+.dk-ib:hover { background: var(--hover); color: var(--foreground); }
+.dk-ib[aria-pressed="true"] { background: var(--signal-soft); color: var(--signal); }
+.dk-ib > svg { width: 14px; height: 14px; }
+.dk-ib.dk-field { width: var(--dk-h); height: var(--dk-h); border: 1px solid var(--dk-line); background: var(--dk-bg); }
+.dk-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--s-1_5); height: var(--dk-h); padding: 0 var(--s-2_5); border: 1px solid var(--dk-line); border-radius: var(--dk-r);
+  background: var(--dk-bg); color: var(--foreground); font: inherit; font-size: var(--dk-fs); font-weight: 500; cursor: pointer; white-space: nowrap; }
+.dk-btn:hover { background: var(--hover); }
+.dk-btn.dk-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.dk-btn.dk-primary:hover { opacity: .92; }
+.dk-btn:disabled { opacity: .5; cursor: default; }
+.dk-btn > svg { width: 14px; height: 14px; }
+.dk-chip { display: inline-flex; align-items: center; gap: var(--s-1); height: 24px; padding: 0 var(--s-2); border: 0; border-radius: var(--r-full); background: var(--muted); color: var(--fg-2);
+  font: inherit; font-size: var(--fs-sm); white-space: nowrap; cursor: pointer; }
+.dk-chip:hover { color: var(--foreground); }
+.dk-chip[aria-pressed="true"] { background: var(--signal-soft); color: var(--signal); }
+.dk-chip > svg { width: 13px; height: 13px; }
+.dk-link { border: 0; background: none; padding: 0; font: inherit; color: var(--signal); cursor: pointer; }
+.dk-link:hover { text-decoration: underline; }
+.dk-check { display: inline-flex; align-items: center; gap: var(--s-1_5); font-size: var(--dk-fs); color: var(--fg-2); cursor: pointer; user-select: none; }
+.dk-check > input { width: 14px; height: 14px; margin: 0; accent-color: var(--signal); }
+
+/* ── notes inside a panel: a status line, a banner ── */
+.dk-note { display: flex; align-items: baseline; gap: var(--s-1_5); color: var(--fg-2); font-size: var(--fs-meta); line-height: 1.4; }
+.dk-note.dk-indent { padding-left: calc(var(--dk-label) + var(--s-2)); }
+.dk-dot { flex: none; width: 7px; height: 7px; transform: translateY(-1px); border-radius: 50%; background: var(--fg-3); }
+.dk-dot.dk-ok { background: var(--ok); }
+.dk-dot.dk-bad { background: var(--bad); }
+.dk-dot.dk-on { background: var(--signal); }
+.dk-banner { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-2) var(--dk-sec-x) 0; padding: var(--s-1_5) var(--s-2); border-radius: var(--dk-r); background: var(--signal-soft); color: var(--foreground); font-size: var(--fs-meta); line-height: 1.4; }
+.dk-banner > .dk-grow { flex: 1; min-width: 0; }
+
+/* ── menu: items with a shortcut column, separators, disabled items that say why ── */
+.dk-menu { min-width: 216px; max-width: 320px; padding: var(--s-1); background: var(--popover); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-pop); display: flex; flex-direction: column; }
+.dk-menu > hr { border: 0; border-top: 1px solid var(--line); margin: var(--s-1) calc(-1 * var(--s-1)); }
+.dk-mh { padding: var(--s-1_5) var(--s-2_5) var(--s-1); font-size: var(--fs-meta); color: var(--fg-3); }
+.dk-mi { display: flex; align-items: center; gap: var(--s-2); width: 100%; min-height: 30px; padding: 0 var(--s-2_5); border: 0; background: none; border-radius: var(--r-sm);
+  font: inherit; font-size: var(--fs-ui); color: var(--foreground); text-align: left; cursor: pointer; }
+.dk-mi:hover, .dk-mi:focus-visible { background: var(--hover); outline: none; }
+.dk-mi > .dk-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-mi > svg { flex: none; width: 15px; height: 15px; color: var(--fg-3); }
+.dk-mk { flex: none; padding-left: var(--s-4); font-size: var(--fs-meta); color: var(--fg-3); }
+.dk-mi.dk-danger { color: var(--bad); }
+.dk-mi[aria-disabled="true"] { color: var(--fg-3); cursor: default; }
+.dk-mi[aria-disabled="true"]:hover { background: none; }
+
+/* ── popover: a floating card (palette, composer, thread) ── */
+.dk-pop { position: absolute; z-index: 11; width: 260px; padding: var(--s-2); background: var(--popover); border: 1px solid var(--line-strong); border-radius: var(--r-lg); box-shadow: var(--shadow-pop);
+  display: flex; flex-direction: column; gap: var(--s-2); font-size: var(--dk-fs); }
+.dk-pop-h { display: flex; align-items: center; gap: var(--s-1_5); min-height: 24px; color: var(--fg-2); font-size: var(--fs-meta); }
+.dk-pop-h > .dk-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-pop-f { display: flex; align-items: center; gap: var(--s-1_5); }
+.dk-pop-f > .dk-grow { flex: 1; }
+.dk-grid8 { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: var(--s-1); }
+.dk-grid8 > .dk-sw { width: 100%; height: auto; aspect-ratio: 1; }
+.dk-tokens { display: flex; flex-direction: column; gap: 1px; max-height: 168px; overflow: auto; }
+.dk-token { display: flex; align-items: center; gap: var(--s-2); height: 26px; padding: 0 var(--s-1_5); border: 0; background: none; border-radius: var(--r-sm); font: inherit; font-size: var(--dk-fs); color: var(--foreground); text-align: left; cursor: pointer; }
+.dk-token:hover { background: var(--hover); }
+.dk-token > .dk-sw { width: 16px; height: 16px; border-radius: 4px; }
+.dk-token > .dk-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-token > .dk-v { color: var(--fg-3); font-size: var(--fs-meta); }
+
+/* ── tree (layers) ── */
+.dk-tree { display: flex; flex-direction: column; }
+.dk-tr { display: flex; align-items: center; gap: var(--s-1); height: 24px; padding: 0 var(--s-2) 0 calc(var(--s-1) + var(--d, 0) * 12px); border-radius: var(--r-sm); cursor: pointer; white-space: nowrap; color: var(--fg-2); }
+.dk-tr:hover { background: var(--hover); }
+.dk-tr.dk-on { background: var(--signal-soft); color: var(--foreground); }
+.dk-tr.dk-also { background: color-mix(in oklab, var(--signal-soft) 50%, transparent); }
+.dk-tr.dk-root { color: var(--foreground); font-weight: 500; }
+.dk-tw { flex: none; display: grid; place-items: center; width: 16px; height: 16px; padding: 0; border: 0; background: none; border-radius: 4px; color: var(--fg-3); cursor: pointer; transition: transform .15s var(--ease); }
+.dk-tw:hover { color: var(--foreground); }
+.dk-tw > svg { width: 12px; height: 12px; }
+.dk-tw[aria-expanded="true"] { transform: rotate(90deg); }
+.dk-tic { flex: none; width: 13px; height: 13px; color: var(--fg-3); }
+.dk-tn { flex: none; }
+.dk-tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-3); }
+
+/* ── disclosure head (a section that folds) ── */
+.dk-fold { display: flex; align-items: center; gap: var(--s-1); height: 32px; padding: 0 var(--dk-sec-x); font-size: var(--fs-meta); font-weight: 500; color: var(--fg-3); list-style: none; cursor: pointer; user-select: none; }
+.dk-fold::-webkit-details-marker { display: none; }
+.dk-fold > .dk-grow { flex: 1; }
+.dk-fold > svg { width: 12px; height: 12px; transition: transform .15s var(--ease); }
+details[open] > .dk-fold > svg { transform: rotate(90deg); }
+
+/* ── floating bar over the stage (selection, zoom) ── */
+.dk-bar { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--popover); border: 1px solid var(--line-strong); border-radius: var(--r-md); box-shadow: var(--shadow-pop); font-size: var(--fs-sm); }
+.dk-bar > .dk-txt { padding: 0 var(--s-1_5) 0 var(--s-2); color: var(--fg-2); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-vsep { flex: none; width: 1px; height: 16px; margin: 0 2px; background: var(--line); }
+.dk-badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-full); background: var(--signal); color: #fff; font-size: 10px; line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* ── comment: a thread entry ── */
+.dk-cmt { display: flex; flex-direction: column; gap: 2px; }
+.dk-cmt-h { display: flex; align-items: baseline; gap: var(--s-1_5); font-size: var(--fs-meta); color: var(--fg-3); }
+.dk-cmt-h > b { color: var(--foreground); font-weight: 600; font-size: var(--dk-fs); }
+.dk-cmt-t { white-space: pre-wrap; line-height: 1.45; color: var(--foreground); overflow-wrap: anywhere; }
+.dk-cmt + .dk-cmt { padding-top: var(--s-2); border-top: 1px solid var(--line); }

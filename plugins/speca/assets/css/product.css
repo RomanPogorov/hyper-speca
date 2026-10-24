@@ -512,6 +512,10 @@ a.dash-title:hover { text-decoration: underline; text-decoration-thickness: 1.5p
 .cbody > .doc:has(> .tab-content > .sandbox-frame) { height: 100%; box-sizing: border-box; padding-bottom: 14px; }
 .tab-content:has(> .sandbox-frame) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tab-content > .sandbox-frame { flex: 1; height: auto; min-height: 420px; }
+/* a design canvas fills the canvas body edge to edge under its title line */
+.cbody > .doc:has(> .tab-design) { height: 100%; box-sizing: border-box; padding-bottom: 0; gap: 10px; }
+.tab-design { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 -18px; border-top: 1px solid var(--line); }
+.tab-design > .dcv, .tab-design > .dcc { flex: 1; min-height: 0; }
 .doc-edit { display: flex; flex-direction: column; gap: 8px; }
 .doc-ta { width: 100%; min-height: 360px; font: inherit; font-size: 13.5px; line-height: 1.55; resize: vertical; }
 /* documents on the canvas use the full width of the pane (app.css caps them at 68ch) */
