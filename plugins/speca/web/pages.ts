@@ -27,7 +27,8 @@ export async function chatOf(c: Ctx): Promise<HSession> {
 /** A chat whose agent works in a folder on this machine is a code project: Files and Changes tabs, the branch chip. */
 export async function codeCtx(c: Ctx, sid: string): Promise<CodeCtx | null> {
   const code = await codeDir(c.h, sid);
-  if (!code) return null;
+  // a "chats on a topic" project (New project → plain) has a folder only because Hyper needs one: no code there
+  if (!code || String(code.dir).startsWith(`${process.cwd()}/.runtime/projects/`)) return null;
   return { projectId: sid, dir: code.dir, repo: null, runner: null, computer: null, scripts: [], run: null, canRun: false, branch: await branchOf(code.h, code.dir) };
 }
 
