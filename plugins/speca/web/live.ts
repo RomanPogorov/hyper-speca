@@ -26,13 +26,16 @@ export function liveStream(c: Ctx): Response {
         flush ??= setTimeout(() => { flush = null; for (const t of pending) write(`event: live\ndata: ${t}\n\n`); pending.clear(); }, 120);
       };
       write(`retry: 2000\n\n`);
-      const topics = [...ids.flatMap((id) => [`agent:${id}`, `agent:${id}:stream`]), "agents", "plugins"];
+      // a timeline (web/timeline.ts) redraws when its chat changes and when its entries are described
+      const tls = [...want].filter((t) => t.startsWith("timeline:")).map((t) => t.slice(9));
+      const topics = [...ids.flatMap((id) => [`agent:${id}`, `agent:${id}:stream`]), ...tls.map((id) => `speca:timeline:${id}`), "agents", "plugins"];
       stop.push(c.h.fns.procs.events.subscribe({
         topics,
         handler: (e: any) => {
           const t = String(e?.topic ?? "");
           // canvas.changed is global (no topic) and names its agent
           if (!t && e?.type === "canvas.changed") { const id = String(e.agentId ?? ""); if (ids.includes(id)) { send(`canvas:${id}`); send(`comments:${id}`); } return; }
+          if (t.startsWith("speca:timeline:")) { send(`timeline:${t.slice(15)}`); return; }
           if (t.startsWith("agent:") && t.endsWith(":stream")) send(`session:${t.slice(6, -7)}`);
           else if (t.startsWith("agent:")) {
             const id = t.slice(6);

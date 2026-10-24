@@ -10,6 +10,7 @@ import * as k from "./ui/kit.ts";
 import { clock, rel } from "./fmt.ts";
 import { lineDiff, hunks, stats, canvasText } from "./diff.ts";
 import { compareHtml } from "./design/kind.ts";
+import { codeDir } from "./code/files.ts";
 
 export type Tab = { id: number; agentId: string; kind: string; title: string; args: Record<string, any>; state: Record<string, any>; active: boolean; createdAt: number; updatedAt: number; closedAt: number | null; version?: number; draftEdits?: number };
 
@@ -43,9 +44,13 @@ export async function canvasHtml(c: Ctx, s: HSession): Promise<Raw> {
       ${tabIcon(c, tab.kind)}<span class="tl">${tab.title}</span><button class="tx" hx-post="/speca/canvas/${tab.id}/close" hx-vals='${JSON.stringify({ session: s.id })}' hx-swap="none" aria-label="${t("canvas.closeTab", { title: tab.title })}">${ic("x", "ic-xs")}</button></div>`))}
   </div>`;
   const closed = (await c.h.fns.canvas.list({ agentId: s.id, closed: true, limit: 15 }).catch(() => [])) as Tab[];
+  const code = await codeDir(c.h, s.id).catch(() => null);
   const plus = html`<div class="dropdown-menu" id="cplus"><button type="button" id="cplus-trigger" class="btn" data-variant="ghost" data-size="icon-sm" aria-haspopup="menu" aria-controls="cplus-menu" aria-expanded="false" aria-label="${t("canvas.newTab")}" data-tooltip="${t("canvas.newTab")}" data-side="bottom">${ic("plus")}</button>
     <div id="cplus-popover" data-popover aria-hidden="true" data-side="bottom" data-align="end"><div role="menu" id="cplus-menu" aria-labelledby="cplus-trigger">
-      ${closed.length ? html`<div role="group"><div role="heading">${t("canvas.recentlyClosed")}</div>${join(closed.map((p) => html`<div role="menuitem" hx-post="/speca/canvas/${p.id}/reopen" hx-vals='${JSON.stringify({ session: s.id })}' hx-swap="none">${tabIcon(c, p.kind)}${p.title}<span data-shortcut>${p.kind}</span></div>`))}</div>` : html`<div role="menuitem" aria-disabled="true">${t("canvas.noSystems")}</div>`}
+      <div role="group">${code ? html`<div role="menuitem" hx-post="/speca/s/${s.id}/files/open" hx-swap="none">${ic("folderTree")}${t("pfiles.tab")}</div><div role="menuitem" hx-post="/speca/s/${s.id}/changes/open" hx-swap="none">${ic("fileDiff")}${t("chg.tab")}</div>` : ""}
+        <div role="menuitem" hx-post="/speca/s/${s.id}/subs/canvas" hx-swap="none">${ic("bot")}${t("subb.title")}</div>
+        <div role="menuitem" hx-post="/speca/s/${s.id}/timeline/open" hx-swap="none">${ic("clock")}${t("tl.title")}<span data-shortcut>${t(s.project_id ? "tl.menuProject" : "tl.menuChat")}</span></div></div>
+      ${closed.length ? html`<hr role="separator"><div role="group"><div role="heading">${t("canvas.recentlyClosed")}</div>${join(closed.map((p) => html`<div role="menuitem" hx-post="/speca/canvas/${p.id}/reopen" hx-vals='${JSON.stringify({ session: s.id })}' hx-swap="none">${tabIcon(c, p.kind)}${p.title}<span data-shortcut>${p.kind}</span></div>`))}</div>` : ""}
     </div></div></div>`;
   const tabsBtn = tabs.length > 1 ? html`<button class="btn" data-variant="ghost" data-size="icon-sm" data-act="tabs-menu" aria-label="${t("canvas.allTabs")}" data-tooltip="${t("canvas.allTabs")}" data-side="bottom" data-ph="${t("canvas.searchTabs")}" data-none="${t("canvas.noTabsFound")}" data-close="${t("common.close")}" data-qicon="${String(ic("search", "ic-sm"))}" data-xicon="${String(ic("x", "ic-xs"))}">${ic("chevDown")}</button>` : "";
   const chatBtn = html`<button class="btn" data-variant="ghost" data-size="icon-sm" data-act="chat-pop" aria-pressed="false" aria-label="${t("view.chatPop")}" data-tooltip="${t("view.chatPop")} · ⌘J" data-side="bottom">${ic("chatDots")}<i class="cp-mark" aria-hidden="true"></i></button>`;

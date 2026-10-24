@@ -86,7 +86,14 @@ export function canvasWait(sid: string): Raw {
 
 export async function sessionPage(c: Ctx, s: HSession): Promise<Raw> {
   const tab = c.url.searchParams.get("tab");
-  if (tab) await c.h.fns.canvas.update({ agentId: s.id, open: true, activeItemId: Number(tab) }).catch(() => undefined);
+  if (tab) {
+    // ?tab=…&focus=…: that part of it in view too (a timeline's way to an artboard in another chat of the project)
+    const focus = c.url.searchParams.get("focus");
+    await c.h.fns.canvas.reopen({ agentId: s.id, itemId: Number(tab) }).catch(() => undefined);
+    const kind = focus ? ((await c.h.fns.canvas.tab({ agentId: s.id, itemId: Number(tab) }).catch(() => null)) as any)?.kind : null;
+    if (focus && kind === "speca.design") await c.h.fns.canvas.setState({ agentId: s.id, itemId: Number(tab), state: { focus: { target: focus.slice(0, 200), at: Date.now() } } }).catch(() => undefined);
+    await c.h.fns.canvas.update({ agentId: s.id, open: true, activeItemId: Number(tab) }).catch(() => undefined);
+  }
   const chat = await chatPanel(c, s);
   const canvas = tab ? await canvasHtml(c, s) : canvasWait(s.id);
   return shell({

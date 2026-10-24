@@ -1,6 +1,7 @@
 // Speca's per-turn changes: what the turn changed in the workspace folder, kept and shown in the chat as the
 // "N files changed" card (a turn_changes event), opened in the Changes tab.
 import { snapshotEnd, type Snap } from "../../web/code/changes.ts";
+import { recordTurnEnd, topicOf } from "../../web/timeline.ts";
 
 /** Compare the workspace folder with its snapshot from the turn's start; record and show what changed.
  * @param opts.agentId Agent whose turn ended.
@@ -12,6 +13,12 @@ export default async function (ctx: Context, _session: Session | null, opts: {
     /** The turn's id. */
     turnId: string;
 }): Promise<void> {
+    // the timeline's entry for this turn, once the turn is closed in the log (turn_end is written right after this hook)
+    setTimeout(() => {
+        void recordTurnEnd(ctx as any, "local", opts.agentId)
+            .then(() => ctx.fns.procs.events.emit({ topic: topicOf(opts.agentId), event: { type: "speca.timeline" } }))
+            .catch(() => {});
+    }, 1500);
     const snaps = (ctx.state as any).specaSnaps as Map<string, Snap> | undefined;
     const snap = snaps?.get(opts.turnId);
     if (!snap) return;
