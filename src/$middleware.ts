@@ -40,7 +40,7 @@ export default async function (ctx: Context, session: Session | null, opts: { re
     // interface when they chose another one; ?ui=hyper keeps Hyper's own.
     if (/^\/(?:a|agent)\/[A-Za-z0-9_-]+\/?$/.test(url.pathname) && url.searchParams.get("ui") !== "hyper"
         && opts.req.headers.get("hx-request") !== "true" && (opts.req.headers.get("sec-fetch-dest") ?? "document") === "document") {
-        const ui = await ctx.fns.ui.provider({}).catch(() => null);
+        const ui = await Promise.resolve().then(() => ctx.fns.ui.provider({})).catch(() => null);
         if (ui && ui.name !== "hyper") {
             return new Response(null, { status: 303, headers: { location: ui.agent.replaceAll("{id}", encodeURIComponent(agent)), "cache-control": "no-store" } });
         }
