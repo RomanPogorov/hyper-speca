@@ -56,6 +56,9 @@ export async function canvasHtml(c: Ctx, s: HSession): Promise<Raw> {
         ${kindsOf(c)["excalidraw.board"] ? html`<div role="menuitem" hx-post="/speca/s/${s.id}/board/open" hx-vals='{"app":"excalidraw"}' hx-swap="none">${ic("penTool")}Excalidraw</div>` : ""}
         ${kindsOf(c)["browser.live"] ? html`<div role="menuitem" hx-post="/speca/s/${s.id}/board/open" hx-vals='{"app":"tldraw"}' hx-swap="none">${ic("grid")}tldraw</div>
         <div role="menuitem" hx-post="/speca/s/${s.id}/board/open" hx-vals='{"app":"browser"}' hx-swap="none">${ic("globe")}${t("canvas.browser")}</div>` : ""}</div>
+      <hr role="separator"><div role="group"><div role="heading">${t("canvas.createWithAgent")}</div>
+        <div role="menuitem" hx-post="/speca/s/${s.id}/canvas/new" hx-vals='{"kind":"speca.doc"}' hx-swap="none">${tabIcon(c, "speca.doc")}${t.locale === "ru" ? "Документ" : "Document"}</div>
+        <div role="menuitem" hx-post="/speca/s/${s.id}/canvas/new" hx-vals='{"kind":"speca.table"}' hx-swap="none">${tabIcon(c, "speca.table")}${t.locale === "ru" ? "Таблица" : "Table"}</div></div>
       ${closed.length ? html`<hr role="separator"><div role="group"><div role="heading">${t("canvas.recentlyClosed")}</div>${join(closed.map((p) => html`<div role="menuitem" hx-post="/speca/canvas/${p.id}/reopen" hx-vals='${JSON.stringify({ session: s.id })}' hx-swap="none">${tabIcon(c, p.kind)}${p.title}<span data-shortcut>${p.kind}</span></div>`))}</div>` : ""}
     </div></div></div>`;
   const tabsBtn = tabs.length > 1 ? html`<button class="btn" data-variant="ghost" data-size="icon-sm" data-act="tabs-menu" aria-label="${t("canvas.allTabs")}" data-tooltip="${t("canvas.allTabs")}" data-side="bottom" data-ph="${t("canvas.searchTabs")}" data-none="${t("canvas.noTabsFound")}" data-close="${t("common.close")}" data-qicon="${String(ic("search", "ic-sm"))}" data-xicon="${String(ic("x", "ic-xs"))}">${ic("chevDown")}</button>` : "";
