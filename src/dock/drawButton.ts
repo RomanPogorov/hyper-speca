@@ -19,9 +19,10 @@ export default async function (
     const b = opts.button;
     const icon = /^ph-[a-z0-9-]+$/.test(String(b.icon ?? "")) ? b.icon : "ph-circle";
     const badge = b.badge === null || b.badge === undefined || b.badge === 0 || b.badge === "" ? "" :
-        `<span class="pointer-events-none absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-1 text-[0.55rem] font-semibold leading-none tabular-nums text-primary-content">${esc(b.badge)}</span>`;
-    const face = `<i class="ph ${esc(icon)} text-base" aria-hidden="true"></i>${badge}`;
-    const cls = "relative flex size-7 items-center justify-center rounded-md text-subtle hover:bg-base-300 hover:text-base-content";
+        `<span class="dock-badge">${esc(b.badge)}</span>`;
+    // A sidebar row: the icon (with its badge) and the label; the narrow rail shows the icon only.
+    const face = `<span class="dock-ico"><i class="ph ${esc(icon)}" aria-hidden="true"></i></span><span class="dock-label">${esc(b.label)}</span>${badge}`;
+    const cls = "dock-row";
     if (b.popup) {
         return await ctx.fns.ui.inplacePopup({
             id: `dock-${opts.id}-popup`,

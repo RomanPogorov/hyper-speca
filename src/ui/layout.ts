@@ -30,7 +30,7 @@ export default async function (ctx: Context, session: Session | null, opts: {
 <head>
 <meta charset="utf-8">
 <meta name="csrf-token" content="${esc(csrfToken)}">
-<script>(function(){try{var saved=localStorage.getItem('hyper-theme');var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme}catch(_){document.documentElement.dataset.theme='light';document.documentElement.style.colorScheme='light'}})()</script>
+<script>(function(){try{var saved=localStorage.getItem('hyper-theme');var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=theme;document.documentElement.style.colorScheme=theme;if(localStorage.getItem('hyper-dock')==='rail')document.documentElement.dataset.dock='rail'}catch(_){document.documentElement.dataset.theme='light';document.documentElement.style.colorScheme='light'}})()</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>${esc(pageTitle)}</title>
 <link rel="icon" href="${esc(favicon)}">
@@ -89,7 +89,6 @@ export default async function (ctx: Context, session: Session | null, opts: {
   color: var(--color-base-content);
 }
 .tool.tool-tucked:active { transform: translateY(0) scale(1.05); }
-#dock,
 .glass-panel {
   background-color: rgb(from var(--color-base-100) r g b / .68);
   background-image: linear-gradient(110deg, rgb(255 255 255 / .16), transparent 48%, rgb(255 255 255 / .05));
@@ -97,9 +96,6 @@ export default async function (ctx: Context, session: Session | null, opts: {
   backdrop-filter: blur(12px) saturate(115%);
   -webkit-backdrop-filter: blur(12px) saturate(115%);
 }
-/* The top zone scrolls when pins outgrow it; a soft fade at the bottom edge says there is more. */
-#dock-top { scrollbar-width: none; mask-image: linear-gradient(to bottom, black calc(100% - 1.25rem), transparent); padding-bottom: 1rem; }
-#dock-top::-webkit-scrollbar { display: none; }
 .glass-panel {
   box-shadow: inherit;
 }
@@ -289,7 +285,6 @@ body[data-presentation="sidebar"] #chat-panel > header { padding-left: .55rem !i
 </style>
 
 <style>
-  body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
   .shiki { background: transparent !important; }
   .assistant pre.shiki { padding: .6em .8em; border-radius: 6px; overflow-x: auto; margin: .4em 0; font-size: 12.5px; line-height: 1.45; }
   .tool pre.shiki { padding: 0; margin: 0; overflow-x: auto; }

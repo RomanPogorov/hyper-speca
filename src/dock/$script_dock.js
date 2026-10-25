@@ -119,6 +119,34 @@
         paintTheme();
     });
 
+    // ── rail: fold the sidebar to icons; remembered per browser, applied before paint by the page head ──
+    function paintRail() {
+        const rail = document.documentElement.dataset.dock === 'rail';
+        const b = document.querySelector('#dock [data-dock-collapse]');
+        if (!b) return;
+        b.setAttribute('aria-pressed', String(rail));
+        b.title = b.ariaLabel = rail ? 'Expand sidebar' : 'Collapse sidebar';
+    }
+    document.addEventListener('click', e => {
+        if (!e.target.closest?.('#dock [data-dock-collapse]')) return;
+        const rail = document.documentElement.dataset.dock !== 'rail';
+        if (rail) document.documentElement.dataset.dock = 'rail'; else delete document.documentElement.dataset.dock;
+        try { localStorage.setItem('hyper-dock', rail ? 'rail' : 'wide'); } catch (_) {}
+        paintRail();
+    });
+
+    // ── the current page's row is marked, after every navigation too ──────
+    function paintCurrent() {
+        const here = location.pathname;
+        document.querySelectorAll('#dock a.dock-row, #dock a.dock-chat').forEach(a => {
+            const path = new URL(a.href, location.href).pathname;
+            const on = path === '/' ? here === '/' : (here === path || here.startsWith(path + '/'));
+            if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+        });
+    }
+    window.addEventListener('popstate', () => setTimeout(paintCurrent));
+    document.addEventListener('htmx:after:history:push', paintCurrent);
+
     // ── refresh after a pin changes (HX-Trigger dock-refresh, or the dock.changed event) ──
     let refreshing = false;
     async function refresh() {
@@ -142,6 +170,10 @@
     window.hyperDock = { refresh, pin };
     document.body.addEventListener('dock-refresh', refresh);
     window.hyperLive.subscribe({ name: 'dock', types: ['dock.changed'], onEvent: refresh, resync: refresh });
+    // The chats list follows new, renamed and archived agents; a burst of changes is one refresh.
+    let soon = null;
+    const later = () => { clearTimeout(soon); soon = setTimeout(refresh, 600); };
+    window.hyperLive.subscribe({ name: 'dock-chats', types: ['agents.changed'], onEvent: later, resync: later });
 
     async function pin(kind, target, pinned = true) {
         const res = await fetch('/dock/pin', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, target, pinned }) });
@@ -150,7 +182,7 @@
         document.body.dispatchEvent(new CustomEvent('nav-refresh'));
     }
 
-    const setup = () => { arm(); paintTheme(); };
+    const setup = () => { arm(); paintTheme(); paintRail(); paintCurrent(); };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', setup); else setup();
-    document.addEventListener('htmx:after:swap', arm);
+    document.addEventListener('htmx:after:swap', () => { arm(); paintCurrent(); });
 })();

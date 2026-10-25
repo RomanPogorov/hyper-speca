@@ -1,0 +1,110 @@
+/* The left sidebar (src/dock/render.ts). It stands on the app frame (base-200) with no box of its own;
+ * the page panel beside it is the white surface. Rows are quiet until hovered, the current page is
+ * lifted. `html[data-dock="rail"]` folds it to a narrow column of icons. */
+#dock.dock-shell {
+  --dock-w: 248px;
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: var(--dock-w);
+  height: 100%;
+  padding: 10px 8px 8px 10px;
+  gap: 2px;
+  background: transparent;
+  color: var(--theme-info);
+  font-size: 13px;
+  user-select: none;
+  transition: width .18s ease;
+}
+#dock .dock-head { display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 0 0 6px; margin-bottom: 8px; }
+#dock .dock-brand { display: flex; min-width: 0; flex: 1; align-items: center; gap: 9px; border-radius: 7px; color: var(--theme-base-content); }
+#dock .dock-logo { width: 22px; height: 22px; flex: none; border-radius: 6px; display: block; }
+#dock .dock-wordmark { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+#dock .dock-head-actions { display: flex; align-items: center; gap: 0; }
+#dock .dock-icon-btn, #dock .dock-section-more, #dock .dock-chip-btn {
+  display: inline-flex; flex: none; align-items: center; justify-content: center;
+  width: 30px; height: 30px; border-radius: 7px; color: var(--theme-info); font-size: 17px;
+}
+#dock .dock-icon-btn:hover, #dock .dock-section-more:hover, #dock .dock-chip-btn:hover { background: var(--theme-base-300); color: var(--theme-base-content); }
+
+#dock .dock-row {
+  position: relative; display: flex; width: 100%; min-width: 0; align-items: center; gap: 10px;
+  height: 32px; padding: 0 8px; border-radius: 7px; color: var(--theme-info); text-align: left;
+  font-weight: 450; transition: background-color .12s ease, color .12s ease;
+}
+#dock .dock-row:hover { background: var(--theme-base-300); color: var(--theme-base-content); }
+#dock .dock-row[aria-current="page"] { background: var(--theme-base-100); color: var(--theme-base-content); font-weight: 500; box-shadow: var(--ui-shadow-1), 0 0 0 1px var(--ui-border); }
+#dock .dock-ico { display: inline-flex; flex: none; width: 18px; justify-content: center; font-size: 17px; color: var(--color-subtle); }
+#dock .dock-row:hover .dock-ico, #dock .dock-row[aria-current="page"] .dock-ico { color: var(--theme-base-content); }
+#dock .dock-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dock .dock-kbd { flex: none; font: inherit; font-size: 11px; color: var(--color-faint); border: 1px solid var(--ui-border); border-radius: 5px; padding: 0 5px; line-height: 17px; background: var(--theme-base-100); }
+#dock .dock-badge { margin-left: auto; flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9999px; background: var(--theme-primary); color: var(--theme-primary-content); font-size: 10.5px; font-weight: 600; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; }
+
+#dock .dock-scroll { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 14px; overflow-y: auto; scrollbar-width: none; margin: 0 -4px; padding: 0 4px 12px; mask-image: linear-gradient(to bottom, black calc(100% - 16px), transparent); }
+#dock .dock-scroll::-webkit-scrollbar { display: none; }
+#dock .dock-nav { display: flex; flex-direction: column; gap: 1px; }
+#dock .dock-section { display: flex; flex-direction: column; gap: 1px; }
+#dock .dock-section-label { display: flex; align-items: center; height: 24px; padding: 0 2px 0 8px; font-size: 11px; font-weight: 500; letter-spacing: .02em; color: var(--color-faint); }
+#dock .dock-section-label .dock-section-more { width: 22px; height: 22px; font-size: 14px; opacity: 0; }
+#dock .dock-section:hover .dock-section-more { opacity: 1; }
+/* Nothing pinned: the label goes, the zone stays a thin drop target. */
+#dock .dock-section-top:not(:has(.dock-item-row)) .dock-section-label { display: none; }
+
+#dock .dock-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 2px; min-height: 2px; }
+#dock .dock-item-row { flex: 1 0 100%; min-width: 0; }
+#dock .dock-item-chip { display: flex; flex: none; align-items: center; justify-content: center; }
+/* An entry's chip that currently shows nothing (a badge with no count) takes no room. */
+#dock .dock-item-chip:not(:has(> :not(script):not([hidden]):not([style*="display:none"]):not([style*="display: none"]))) { display: none; }
+#dock .dock-item-chip > a { display: inline-flex; margin: 0; }
+
+#dock .dock-chats { display: flex; flex-direction: column; gap: 1px; }
+#dock .dock-chat { display: flex; min-width: 0; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; color: var(--theme-info); }
+#dock .dock-chat:hover { background: var(--theme-base-300); color: var(--theme-base-content); }
+#dock .dock-chat[aria-current="page"] { background: var(--theme-base-100); color: var(--theme-base-content); font-weight: 500; box-shadow: var(--ui-shadow-1), 0 0 0 1px var(--ui-border); }
+#dock .dock-chat-live { flex: none; width: 7px; height: 7px; border-radius: 9999px; background: var(--theme-success); box-shadow: 0 0 0 3px color-mix(in oklab, var(--theme-success) 20%, transparent); animation: dock-pulse 1.6s ease-in-out infinite; }
+#dock .dock-chat-unread { display: block; flex: none; width: 7px; height: 7px; border-radius: 9999px; background: var(--theme-signal); }
+@keyframes dock-pulse { 50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--theme-success) 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { #dock .dock-chat-live { animation: none; } }
+
+#dock .dock-foot { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 2px 0; border-top: 1px solid var(--ui-border); }
+#dock .dock-me { display: flex; min-width: 0; flex: 1; align-items: center; }
+#dock .dock-foot #dock-bottom { flex: 1; flex-wrap: nowrap; justify-content: flex-end; gap: 2px; }
+#dock .dock-foot .dock-me + #dock-bottom { flex: none; }
+#dock .dock-foot #online-all { flex-direction: row !important; margin: 0 !important; gap: 2px; width: auto !important; min-height: 0 !important; }
+#dock .dock-foot #quota-rings { width: auto !important; }
+#dock .dock-foot #llm-usage > [role="group"] { flex-direction: row; border-top: 0; padding-top: 0; gap: 0; }
+#dock .dock-foot #llm-usage > [role="group"] > a { padding: 1px; }
+
+/* ── rail ───────────────────────────────────────────────────────────── */
+html[data-dock="rail"] #dock.dock-shell { --dock-w: 56px; padding: 10px 6px 8px 8px; }
+html[data-dock="rail"] #dock .dock-label,
+html[data-dock="rail"] #dock .dock-kbd,
+html[data-dock="rail"] #dock .dock-section-label,
+html[data-dock="rail"] #dock .dock-section-chats { display: none; }
+html[data-dock="rail"] #dock .dock-head { flex-direction: column; height: auto; gap: 6px; padding: 0; }
+html[data-dock="rail"] #dock .dock-head-actions { flex-direction: column; }
+html[data-dock="rail"] #dock .dock-foot { flex-direction: column; }
+html[data-dock="rail"] #dock .dock-foot #dock-bottom { flex-direction: column; }
+html[data-dock="rail"] #dock .dock-foot #llm-usage > [role="group"] { flex-direction: column; }
+html[data-dock="rail"] #dock .dock-brand { flex: none; justify-content: center; }
+html[data-dock="rail"] #dock .dock-row { justify-content: center; padding: 0; gap: 0; }
+html[data-dock="rail"] #dock .dock-row .dock-badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; line-height: 15px; font-size: 9px; padding: 0 3px; }
+html[data-dock="rail"] #dock .dock-zone { flex-direction: column; flex-wrap: nowrap; }
+html[data-dock="rail"] #dock .dock-item-row { flex: none; width: 100%; }
+html[data-dock="rail"] #dock .dock-foot #online-all { flex-direction: column !important; }
+html[data-dock="rail"] #dock .dock-me { flex: none; justify-content: center; }
+html[data-dock="rail"] #dock .dock-collapse i { transform: scaleX(-1); }
+
+/* ── the page panel beside the sidebar ───────────────────────────────── */
+#frame > #page-view {
+  margin: 6px 6px 6px 0;
+  min-height: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--ui-shadow-1);
+}
+@media (max-width: 700px) {
+  #frame > #page-view { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+}
+body[data-presentation="sidebar"] #frame > #page-view { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
