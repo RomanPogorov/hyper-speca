@@ -89,15 +89,10 @@ export default async function (ctx: Context, session: Session | null, opts: {
   color: var(--color-base-content);
 }
 .tool.tool-tucked:active { transform: translateY(0) scale(1.05); }
+/* Panels inside the page (canvas, inspector): plain surfaces with a hairline, no glass. */
 .glass-panel {
-  background-color: rgb(from var(--color-base-100) r g b / .68);
-  background-image: linear-gradient(110deg, rgb(255 255 255 / .16), transparent 48%, rgb(255 255 255 / .05));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px rgb(0 0 0 / .08);
-  backdrop-filter: blur(12px) saturate(115%);
-  -webkit-backdrop-filter: blur(12px) saturate(115%);
-}
-.glass-panel {
-  box-shadow: inherit;
+  background-color: var(--color-base-100);
+  box-shadow: none !important;
 }
 .agent-meta-panel { transition: width .18s ease, border-radius .18s ease; }
 .agent-meta-panel.agent-meta-collapsed { width: 2.5rem !important; min-width: 2.5rem; }
@@ -107,11 +102,10 @@ export default async function (ctx: Context, session: Session | null, opts: {
 .agent-meta-panel.agent-meta-collapsed .agent-meta-toggle { color: var(--theme-base-content); }
 
 .glass-bar {
-  background-color: rgb(from var(--color-base-100) r g b / .68) !important;
-  background-image: linear-gradient(110deg, rgb(255 255 255 / .12), transparent 45%, rgb(255 255 255 / .04));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px rgb(0 0 0 / .08);
-  backdrop-filter: blur(12px) saturate(115%);
-  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  background-color: rgb(from var(--color-base-100) r g b / .92) !important;
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 #chat-panel { position: relative; container: chat / inline-size; }
 /* Canvas (src/canvas): hidden until the agent page carries data-canvas-open. Then the canvas takes the
@@ -152,12 +146,9 @@ export default async function (ctx: Context, session: Session | null, opts: {
 @container chat (max-width: 420px) {
   #chat-panel > header [data-chat-buttons], #chat-panel > header [data-chat-badges] > :not([data-chat-id="agent.status"]) { display: none !important; }
 }
+/* The chat and empty canvas read as the page itself: plain, no grid. */
 .dot-grid-surface {
-  background-color: var(--color-base-200);
-  background-image: radial-gradient(circle, color-mix(in oklab, var(--color-base-content) 9%, transparent) 0 1px, transparent 1.35px);
-  background-position: 8px 8px;
-  background-size: 16px 16px;
-  background-attachment: local;
+  background-color: var(--color-base-100);
 }
 
 .chat-dot-grid { padding-top: 4rem !important; padding-bottom: 6.5rem !important; }
@@ -179,37 +170,32 @@ export default async function (ctx: Context, session: Session | null, opts: {
 .glass-input {
   min-height: 44px;
   max-height: 208px;
-  background-color: rgb(from var(--color-base-100) r g b / .80) !important;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / .04), 0 2px 8px rgb(0 0 0 / .04), 0 4px 80px 8px rgb(0 0 0 / .024);
-  backdrop-filter: blur(16px) saturate(115%);
-  -webkit-backdrop-filter: blur(16px) saturate(115%);
+  background-color: var(--color-base-100) !important;
+  border: 1px solid var(--ui-border-strong);
+  box-shadow: var(--ui-shadow-pop);
 }
-.chat-box.glass-input { max-height: none; min-height: 0; }
-.chat-box:focus-within { box-shadow: 0 0 0 2px rgb(59 130 246 / .55), 0 2px 10px rgb(0 0 0 / .055), 0 4px 80px 8px rgb(0 0 0 / .03); }
+.chat-box.glass-input { max-height: none; min-height: 0; border-radius: 14px !important; }
+.chat-box:focus-within { border-color: var(--ui-ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ui-ring) 22%, transparent), var(--ui-shadow-pop); }
 .chat-ring { display: block; width: 18px; height: 18px; border-radius: 9999px; background: conic-gradient(var(--c) var(--p), color-mix(in oklab, var(--color-base-content) 14%, transparent) 0); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px)); }
-.glass-input:hover { box-shadow: 0 0 0 1px rgb(0 0 0 / .05), 0 2px 9px rgb(0 0 0 / .05), 0 4px 80px 8px rgb(0 0 0 / .028); }
-.glass-input:focus {
-  box-shadow: 0 0 0 3px rgb(59 130 246 / .72), 0 2px 10px rgb(0 0 0 / .055), 0 4px 80px 8px rgb(0 0 0 / .03);
-}
+.glass-input:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 3px color-mix(in oklab, var(--ui-ring) 22%, transparent); }
 .chat-composer kbd { font: inherit; color: color-mix(in oklab, var(--color-base-content) 55%, transparent); }
 
-
-.chat-glass,
-.chat-glass-primary {
-  background-size: 16px 16px;
-  background-position: 9px 9px;
-  background-attachment: local;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-.chat-glass {
-  background-color: rgb(from var(--color-base-100) r g b / .86);
-  background-image: radial-gradient(circle, color-mix(in oklab, var(--color-base-content) 5%, transparent) 0 1px, transparent 1.35px);
+/* Messages: the agent's answer is plain text on the page; the person's is a quiet bubble on the right. */
+.chat-glass, .assistant.chat-glass.border-ui-border {
+  background: transparent;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  padding-left: .25rem !important;
+  padding-right: .25rem !important;
 }
 .chat-glass-primary {
-  background-color: rgb(20 20 22 / .94);
-  background-image: radial-gradient(circle, rgb(255 255 255 / .23) 0 1.1px, transparent 1.5px);
+  background-color: var(--color-base-300);
+  color: var(--color-base-content) !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 16px !important;
 }
+.chat-glass-primary [class*="text-white"] { color: var(--color-subtle) !important; }
 
 /* Highlighted code inside tool detail dialogs. */
 .app-popup-body pre { margin: 0; padding: .75rem 1rem; border-radius: .65rem; background: rgba(0,0,0,.04) !important; white-space: pre-wrap; word-break: break-word; }
